@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VRM + VRMA Viewer · 动画直选</title>
+
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --panel-bg: rgba(20, 20, 40, 0.88);
+            --text: #e0e0e0;
+            --accent: #5b9bd5;
+            --accent-active: #7ab8f5;
+            --border: rgba(255, 255, 255, 0.12);
+            --btn-bg: rgba(255, 255, 255, 0.08);
+            --btn-hover: rgba(255, 255, 255, 0.18);
+            --preset-active: #3a6fc5;
+            --preset-hover: #4a80d8;
+            --shadow: 0 6px 28px rgba(0, 0, 0, 0.6);
+            --radius: 12px;
+            --transition: 0.2s ease;
+        }
+
+        html,
+        body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #0d0d14;
+            font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ----- 主界面容器 ----- */
+        #ui {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            z-index: 10;
+            background: var(--panel-bg);
+            padding: 18px 20px;
+            border-radius: var(--radius);
+            color: var(--text);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            min-width: 260px;
+            max-width: 360px;
+            user-select: none;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            max-height: calc(100vh - 32px);
+            overflow-y: auto;
+        }
+
+        .ui-section {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .ui-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: #aaa;
+            margin-bottom: 2px;
+        }
+
+        .ui-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        /* 文件选择按钮 */
+        input[type="file"] {
+            color: #ccc;
+            font-size: 12px;
+            max-width: 200px;
+            cursor: pointer;
+        }
+
+        input[type="file"]::file-selector-button {
+            background: var(--btn-bg);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            color: var(--text);
+            padding: 5px 12px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background var(--transition);
+        }
+
+        input[type="file"]::file-selector-button:hover {
+            background: var(--btn-hover);
+        }
+
+        /* 通用按钮 */
+        button {
+            background: var(--btn-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            padding: 8px 14px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all var(--transition);
+            white-space: nowrap;
+            letter-spacing: 0.02em;
+        }
+
+        button:hover {
+            background: var(--btn-hover);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        button:disabled {
+            opacity: 0.4;
+            pointer-events: none;
+            filter: grayscale(0.3);
+        }
+
+        /* 动画按钮网格 */
+        .anim-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+            gap: 5px;
+        }
+
+        .anim-btn {
+            background: var(--btn-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            padding: 8px 4px;
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all var(--transition);
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .anim-btn:hover:not(:disabled) {
+            background: var(--btn-hover);
+            border-color: rgba(255, 255, 255, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .anim-btn.active-anim {
+            background: var(--preset-active);
+            border-color: #6a9ee6;
+            color: white;
+            box-shadow: 0 0 12px rgba(58, 111, 197, 0.5);
+            font-weight: 600;
+        }
+
+        /* 预设按钮组 */
+        .preset-group {
+            display: flex;
+            gap: 3px;
+            background: rgba(0, 0, 0, 0.35);
+            border-radius: 7px;
+            padding: 3px;
+        }
+
+        .preset-btn {
+            flex: 1;
+            border: none;
+            background: transparent;
+            color: #999;
+            padding: 7px 8px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+            transition: all var(--transition);
+        }
+
+        .preset-btn:hover {
+            color: #ddd;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .preset-btn.active {
+            background: var(--preset-active);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(58, 111, 197, 0.4);
+        }
+
+        .preset-btn.active:hover {
+            background: var(--preset-hover);
+        }
+
+        /* 状态小点 */
+        .status-dot {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            margin-right: 5px;
+            vertical-align: middle;
+            position: relative;
+            top: -1px;
+        }
+
+        .status-dot.on {
+            background: #4caf50;
+            box-shadow: 0 0 6px rgba(76, 175, 80, 0.6);
+        }
+
+        .status-dot.off {
+            background: #666;
+        }
+
+        .info-text {
+            font-size: 10px;
+            color: #888;
+            margin-top: 2px;
+            line-height: 1.4;
+        }
+
+        .loading-text {
+            color: #f0c040;
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        /* 响应式 */
+        @media (max-width: 480px) {
+            #ui {
+                top: 8px;
+                left: 8px;
+                padding: 12px 14px;
+                gap: 10px;
+                min-width: auto;
+                max-width: calc(100vw - 32px);
+            }
+            .anim-btn {
+                padding: 6px 2px;
+                font-size: 10px;
+            }
+            .preset-btn {
+                padding: 6px 6px;
+                font-size: 10px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="ui">
+        <!-- VRM 模型加载 -->
+        <div class="ui-section">
+            <span class="ui-label">📦 VRM 模型</span>
+            <input id="vrmInput" type="file" accept=".vrm">
+        </div>
+
+        <!-- 动画列表 (按钮区域) -->
+        <div class="ui-section">
+            <span class="ui-label">🎬 动画选择</span>
+            <div id="animButtonContainer" class="anim-grid">
+                <span class="info-text" style="grid-column:1/-1;">请先加载 VRM 模型</span>
+            </div>
+            <span class="info-text" id="animStatus" style="display:none;"></span>
+        </div>
+
+        <!-- 渲染精细度 -->
+        <div class="ui-section">
+            <span class="ui-label">🎨 渲染精细度</span>
+            <div class="preset-group" id="presetGroup">
+                <button class="preset-btn" data-preset="low">低</button>
+                <button class="preset-btn" data-preset="medium">标准</button>
+                <button class="preset-btn active" data-preset="high">高</button>
+                <button class="preset-btn" data-preset="ultra">极致</button>
+            </div>
+            <span class="info-text" id="presetInfo">
+                <span class="status-dot on"></span>像素比 1× &nbsp;|&nbsp;
+                <span class="status-dot on"></span>抗锯齿 &nbsp;|&nbsp;
+                <span class="status-dot on"></span>阴影
+            </span>
+        </div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+                "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3/lib/three-vrm.module.min.js",
+                "@pixiv/three-vrm-animation": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm-animation@3/lib/three-vrm-animation.module.min.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from "three";
+        import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+        import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+        import { VRMLoaderPlugin } from "@pixiv/three-vrm";
+        import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from "@pixiv/three-vrm-animation";
+
+        // ==================== 内置动画文件列表 ====================
+        const ANIMATION_FILES = [
+            { file: "appearing.vrma", label: "出现" },
+            { file: "greet.vrma", label: "打招呼" },
+            { file: "liked.vrma", label: "点赞" },
+            { file: "pose.vrma", label: "摆姿势" },
+            { file: "shoot.vrma", label: "射击" },
+            { file: "showbody.vrma", label: "展示" },
+            { file: "spin.vrma", label: "旋转" },
+            { file: "squat.vrma", label: "蹲下" },
+            { file: "waiting.vrma", label: "等待" },
+            { file: "yeah.vrma", label: "耶✌" },
+        ];
+
+        // 等待动画的关键名
+        const WAITING_ANIM_KEY = "waiting.vrma";
+
+        // ==================== 渲染质量预设 ====================
+        const QUALITY_PRESETS = {
+            low: {
+                label: "低",
+                pixelRatio: 0.5,
+                antialias: false,
+                shadows: false,
+                shadowMapSize: 512,
+                shadowMapType: THREE.PCFShadowMap,
+            },
+            medium: {
+                label: "标准",
+                pixelRatio: 1.0,
+                antialias: false,
+                shadows: false,
+                shadowMapSize: 1024,
+                shadowMapType: THREE.PCFShadowMap,
+            },
+            high: {
+                label: "高",
+                pixelRatio: 1.0,
+                antialias: true,
+                shadows: true,
+                shadowMapSize: 2048,
+                shadowMapType: THREE.PCFShadowMap,
+            },
+            ultra: {
+                label: "极致",
+                pixelRatio: 2.0,
+                antialias: true,
+                shadows: true,
+                shadowMapSize: 4096,
+                shadowMapType: THREE.PCFSoftShadowMap,
+            },
+        };
+
+        let currentPreset = "high";
+        const preset = () => QUALITY_PRESETS[currentPreset];
+
+        // ==================== 场景初始化 ====================
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x222222);
+
+        const camera = new THREE.PerspectiveCamera(
+            35,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            100,
+        );
+        camera.position.set(0, 1.4, 3);
+
+        // 灯光
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+        directionalLight.position.set(1, 1.5, 1);
+        scene.add(directionalLight);
+
+        function configureLightShadows(light, presetKey) {
+            const cfg = QUALITY_PRESETS[presetKey];
+            light.castShadow = cfg.shadows;
+            if (cfg.shadows) {
+                light.shadow.mapSize.width = cfg.shadowMapSize;
+                light.shadow.mapSize.height = cfg.shadowMapSize;
+                light.shadow.camera.left = -2;
+                light.shadow.camera.right = 2;
+                light.shadow.camera.top = 3;
+                light.shadow.camera.bottom = -0.5;
+                light.shadow.camera.near = 0.1;
+                light.shadow.camera.far = 15;
+                light.shadow.bias = -0.0003;
+                light.shadow.normalBias = 0.02;
+            }
+        }
+        configureLightShadows(directionalLight, currentPreset);
+
+        // 地面
+        const groundGeometry = new THREE.CircleGeometry(2.5, 48);
+        const groundMaterial = new THREE.ShadowMaterial({ opacity: 0.45 });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = 0.001;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // 渲染器
+        let renderer = new THREE.WebGLRenderer({
+            antialias: preset().antialias,
+            powerPreference: "high-performance",
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(preset().pixelRatio, window.devicePixelRatio));
+        renderer.shadowMap.enabled = preset().shadows;
+        renderer.shadowMap.type = preset().shadowMapType;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        document.body.appendChild(renderer.domElement);
+
+        // OrbitControls
+        let controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 1.0, 0);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+        controls.minDistance = 0.8;
+        controls.maxDistance = 8;
+        controls.maxPolarAngle = Math.PI * 0.75;
+        controls.update();
+
+        // ==================== 运行时核心变量 ====================
+        const clock = new THREE.Clock();
+        let currentVRM = null;
+        let mixer = null; // 全局 AnimationMixer
+        let animationActions = new Map(); // key: 文件名, value: THREE.AnimationAction
+        let activeAnimFile = null; // 当前播放的动画文件名
+        let waitingAction = null; // waiting 动画的 action 引用
+        let isLoadingAnimations = false;
+
+        // ==================== 动画管理 ====================
+        function clearAllActions() {
+            if (mixer) {
+                mixer.stopAllAction();
+            }
+            animationActions.clear();
+            waitingAction = null;
+            activeAnimFile = null;
+        }
+
+        // 停止当前动画并淡出
+        function stopCurrentAction(fadeOutTime = 0.25) {
+            if (!mixer) return;
+            mixer._actions.forEach((action) => {
+                if (action.isRunning()) {
+                    action.fadeOut(fadeOutTime);
+                }
+            });
+            // 稍后强制停止
+            setTimeout(() => {
+                if (mixer) {
+                    mixer._actions.forEach((action) => {
+                        if (!action.isRunning()) action.stop();
+                    });
+                }
+            }, fadeOutTime * 1000 + 50);
+        }
+
+        // 播放指定动画（文件名），loopMode 可选
+        function playAnimation(fileName, loopMode = THREE.LoopOnce, crossfade = 0.3) {
+            if (!mixer || !animationActions.has(fileName)) return;
+
+            const action = animationActions.get(fileName);
+            // 如果已经在播放同一个动画且未结束，忽略（避免重播打断）
+            if (activeAnimFile === fileName && action.isRunning()) return;
+
+            // 停止当前所有动作（淡出）
+            stopCurrentAction(crossfade);
+
+            // 设置循环模式
+            action.loop = loopMode;
+            action.clampWhenFinished = (loopMode === THREE.LoopOnce);
+            action.reset();
+            action.fadeIn(crossfade).play();
+
+            activeAnimFile = fileName;
+
+            // 更新按钮高亮
+            updateActiveButton(fileName);
+        }
+
+        // 播放等待动画循环
+        function playWaitingLoop(fadeIn = 0.4) {
+            if (!waitingAction) return;
+            stopCurrentAction(0.2);
+            waitingAction.loop = THREE.LoopRepeat;
+            waitingAction.clampWhenFinished = false;
+            waitingAction.reset();
+            waitingAction.fadeIn(fadeIn).play();
+            activeAnimFile = WAITING_ANIM_KEY;
+            updateActiveButton(WAITING_ANIM_KEY);
+        }
+
+        // 监听动画结束事件，自动切换回等待
+        function setupMixerListener() {
+            if (!mixer) return;
+            mixer.addEventListener('finished', (e) => {
+                const finishedAction = e.action;
+                // 找到对应的文件名
+                let finishedFile = null;
+                for (let [file, action] of animationActions.entries()) {
+                    if (action === finishedAction) {
+                        finishedFile = file;
+                        break;
+                    }
+                }
+                // 如果结束的不是等待动画，则自动切换到等待循环
+                if (finishedFile && finishedFile !== WAITING_ANIM_KEY) {
+                    console.log(`⏹️ 动画 "${finishedFile}" 播放完毕 → 切换到等待循环`);
+                    playWaitingLoop(0.35);
+                }
+            });
+        }
+
+        // ==================== 预加载所有动画文件 ====================
+        async function preloadAllAnimations(vrm) {
+            if (isLoadingAnimations) return;
+            isLoadingAnimations = true;
+            const container = document.getElementById("animButtonContainer");
+            container.innerHTML = '<span class="loading-text" style="grid-column:1/-1;">⏳ 正在加载动画文件...</span>';
+            const statusEl = document.getElementById("animStatus");
+            statusEl.style.display = 'none';
+
+            // 清空旧数据
+            clearAllActions();
+            // 为新模型创建 mixer
+            if (mixer) {
+                mixer.stopAllAction();
+                // 移除旧监听器？简单重建
+            }
+            mixer = new THREE.AnimationMixer(vrm.scene);
+            setupMixerListener();
+
+            const loader = new GLTFLoader();
+            loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
+
+            let loadedCount = 0;
+            const total = ANIMATION_FILES.length;
+
+            // 并行加载所有文件
+            const loadPromises = ANIMATION_FILES.map((item) => {
+                return new Promise((resolve, reject) => {
+                    loader.load(
+                        `./${item.file}`,
+                        (gltf) => {
+                            const vrmaData = gltf.userData.vrmAnimations[0];
+                            const clip = createVRMAnimationClip(vrmaData, vrm);
+                            const action = mixer.clipAction(clip);
+                            // 设置默认停止
+                            action.stop();
+                            animationActions.set(item.file, action);
+                            loadedCount++;
+                            statusEl.style.display = 'block';
+                            statusEl.innerHTML = `⏳ 加载中 ${loadedCount}/${total} ...`;
+                            resolve({ file: item.file, action });
+                        },
+                        undefined,
+                        (error) => {
+                            console.warn(`⚠️ 加载动画失败: ${item.file}`, error);
+                            loadedCount++;
+                            statusEl.innerHTML = `⚠️ 部分加载失败 (${loadedCount}/${total})`;
+                            resolve(null); // 不阻塞其他加载
+                        },
+                    );
+                });
+            });
+
+            await Promise.all(loadPromises);
+
+            // 获取 waiting action
+            waitingAction = animationActions.get(WAITING_ANIM_KEY) || null;
+
+            // 生成按钮
+            buildAnimationButtons();
+
+            // 自动播放等待动画
+            if (waitingAction) {
+                playWaitingLoop(0.5);
+            } else {
+                console.warn("未找到 waiting.vrma，无法自动播放等待动画");
+                activeAnimFile = null;
+                updateActiveButton(null);
+            }
+
+            isLoadingAnimations = false;
+            statusEl.innerHTML = '✅ 动画就绪';
+            setTimeout(() => { statusEl.style.display = 'none'; }, 1500);
+        }
+
+        // 创建动画按钮 UI
+        function buildAnimationButtons() {
+            const container = document.getElementById("animButtonContainer");
+            container.innerHTML = '';
+
+            ANIMATION_FILES.forEach((item) => {
+                const btn = document.createElement("button");
+                btn.className = "anim-btn";
+                btn.textContent = item.label;
+                btn.dataset.file = item.file;
+                btn.title = item.file;
+                btn.addEventListener("click", () => {
+                    if (!animationActions.has(item.file)) return;
+                    // 如果点击的是等待动画，直接循环播放
+                    if (item.file === WAITING_ANIM_KEY) {
+                        playWaitingLoop(0.3);
+                    } else {
+                        // 播放一次，结束后自动回等待
+                        playAnimation(item.file, THREE.LoopOnce, 0.25);
+                    }
+                });
+                container.appendChild(btn);
+            });
+
+            // 初始高亮
+            updateActiveButton(null);
+        }
+
+        function updateActiveButton(fileName) {
+            document.querySelectorAll(".anim-btn").forEach((btn) => {
+                btn.classList.toggle("active-anim", btn.dataset.file === fileName);
+            });
+        }
+
+        // ==================== VRM 文件加载 ====================
+        document.getElementById("vrmInput").addEventListener("change", async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const url = URL.createObjectURL(file);
+
+            const loader = new GLTFLoader();
+            loader.register((parser) => new VRMLoaderPlugin(parser));
+
+            loader.load(url, (gltf) => {
+                // 移除旧模型
+                if (currentVRM) {
+                    scene.remove(currentVRM.scene);
+                }
+
+                currentVRM = gltf.userData.vrm;
+                scene.add(currentVRM.scene);
+
+                // 应用当前阴影设置
+                updateVRMShadowProps();
+
+                console.log("✅ VRM 模型加载完成");
+
+                // 加载所有动画
+                preloadAllAnimations(currentVRM);
+            });
+        });
+
+        function updateVRMShadowProps() {
+            if (!currentVRM) return;
+            const enableShadows = preset().shadows;
+            currentVRM.scene.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = enableShadows;
+                    child.receiveShadow = enableShadows;
+                }
+            });
+        }
+
+        // ==================== 渲染循环 ====================
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = Math.min(clock.getDelta(), 0.1);
+            if (mixer) {
+                mixer.update(delta);
+            }
+            if (currentVRM) {
+                currentVRM.update(delta);
+            }
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // ==================== 预设切换逻辑 ====================
+        function rebuildRenderer(antialias) {
+            const oldCanvas = renderer.domElement;
+            const oldTarget = controls.target.clone();
+            const wasShadowEnabled = renderer.shadowMap.enabled;
+            const oldShadowType = renderer.shadowMap.type;
+
+            controls.dispose();
+
+            const newRenderer = new THREE.WebGLRenderer({
+                antialias: antialias,
+                powerPreference: "high-performance",
+            });
+            newRenderer.setSize(window.innerWidth, window.innerHeight);
+            newRenderer.setPixelRatio(Math.min(preset().pixelRatio, window.devicePixelRatio));
+            newRenderer.shadowMap.enabled = wasShadowEnabled;
+            newRenderer.shadowMap.type = oldShadowType;
+            newRenderer.outputColorSpace = THREE.SRGBColorSpace;
+            newRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+            newRenderer.toneMappingExposure = 1.0;
+
+            if (oldCanvas.parentNode) {
+                oldCanvas.parentNode.replaceChild(newRenderer.domElement, oldCanvas);
+            } else {
+                document.body.appendChild(newRenderer.domElement);
+            }
+
+            renderer = newRenderer;
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.target.copy(oldTarget);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.08;
+            controls.minDistance = 0.8;
+            controls.maxDistance = 8;
+            controls.maxPolarAngle = Math.PI * 0.75;
+            controls.update();
+        }
+
+        function applyPreset(presetKey) {
+            const cfg = QUALITY_PRESETS[presetKey];
+            const oldCfg = QUALITY_PRESETS[currentPreset];
+
+            if (cfg.antialias !== oldCfg.antialias) {
+                rebuildRenderer(cfg.antialias);
+            }
+
+            renderer.setPixelRatio(Math.min(cfg.pixelRatio, window.devicePixelRatio));
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            const shadowsToggled = cfg.shadows !== oldCfg.shadows;
+            renderer.shadowMap.enabled = cfg.shadows;
+            renderer.shadowMap.type = cfg.shadowMapType;
+            directionalLight.castShadow = cfg.shadows;
+
+            if (cfg.shadows && shadowsToggled) {
+                configureLightShadows(directionalLight, presetKey);
+            }
+
+            ground.receiveShadow = cfg.shadows;
+            updateVRMShadowProps();
+
+            currentPreset = presetKey;
+            updatePresetUI();
+        }
+
+        function updatePresetUI() {
+            const cfg = preset();
+            document.querySelectorAll(".preset-btn").forEach((btn) => {
+                btn.classList.toggle("active", btn.dataset.preset === currentPreset);
+            });
+
+            const infoEl = document.getElementById("presetInfo");
+            const aaDot = cfg.antialias
+                ? '<span class="status-dot on"></span>'
+                : '<span class="status-dot off"></span>';
+            const shDot = cfg.shadows
+                ? '<span class="status-dot on"></span>'
+                : '<span class="status-dot off"></span>';
+
+            infoEl.innerHTML =
+                `<span class="status-dot on"></span>像素比 ${cfg.pixelRatio.toFixed(1)}× &nbsp;|&nbsp;` +
+                `${aaDot}抗锯齿 &nbsp;|&nbsp;` +
+                `${shDot}阴影`;
+        }
+
+        document.getElementById("presetGroup").addEventListener("click", (e) => {
+            const btn = e.target.closest(".preset-btn");
+            if (!btn) return;
+            const presetKey = btn.dataset.preset;
+            if (presetKey && presetKey !== currentPreset) {
+                applyPreset(presetKey);
+            }
+        });
+        updatePresetUI();
+
+        // ==================== 窗口大小调整 ====================
+        window.addEventListener("resize", () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // ==================== 键盘快捷键 ====================
+        window.addEventListener("keydown", (e) => {
+            const presetKeys = ["low", "medium", "high", "ultra"];
+            const index = parseInt(e.key);
+            if (index >= 1 && index <= 4 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                const targetKey = presetKeys[index - 1];
+                if (targetKey !== currentPreset) {
+                    applyPreset(targetKey);
+                    console.log(`🎨 切换到预设: ${QUALITY_PRESETS[targetKey].label}`);
+                }
+            }
+            if (e.key === "r" || e.key === "R") {
+                if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+                    controls.target.set(0, 1.0, 0);
+                    camera.position.set(0, 1.4, 3);
+                    controls.update();
+                    console.log("🔄 视角已重置");
+                }
+            }
+        });
+
+        console.log("🚀 VRM 动画直选查看器启动");
+        console.log("   动画文件已内置，加载模型后即可使用");
+        console.log("   快捷键: 数字键 1-4 切换画质 | R 重置视角");
+    </script>
+</body>
+</html>
