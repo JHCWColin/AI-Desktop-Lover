@@ -3,304 +3,2050 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>VRM + VRMA Viewer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VRM AI 聊天模式 · 语音交互</title>
 
     <style>
+        :root {
+            --bg: #1a1a2e;
+            --panel-bg: rgba(20, 20, 40, 0.9);
+            --text: #e0e0e0;
+            --accent: #5b9bd5;
+            --accent-active: #7ab8f5;
+            --border: rgba(255, 255, 255, 0.12);
+            --btn-bg: rgba(255, 255, 255, 0.08);
+            --btn-hover: rgba(255, 255, 255, 0.18);
+            --preset-active: #3a6fc5;
+            --preset-hover: #4a80d8;
+            --shadow: 0 6px 28px rgba(0, 0, 0, 0.6);
+            --radius: 12px;
+            --transition: 0.2s ease;
+            --danger: #e0556a;
+            --danger-hover: #f07080;
+            --success: #4caf84;
+            --toast-bg: rgba(30, 30, 55, 0.95);
+            --toast-error: #e0556a;
+            --toast-warn: #f0a040;
+            --toast-info: #5b9bd5;
+            --toast-success: #4caf84;
+        }
+
         html,
         body {
             margin: 0;
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background: #111;
+            background: #0d0d14;
+            font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        #toastContainer {
+            position: fixed;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: none;
+            max-width: 90vw;
+            width: 420px;
+        }
+
+        .toast {
+            pointer-events: auto;
+            background: var(--toast-bg);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            padding: 12px 16px;
+            color: #fff;
+            font-size: 13px;
+            font-weight: 500;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+            animation: toastSlideIn 0.35s cubic-bezier(0.22, 0.61, 0.36, 1);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .toast.removing {
+            animation: toastSlideOut 0.3s cubic-bezier(0.55, 0.06, 0.68, 0.19) forwards;
+        }
+
+        .toast.error {
+            border-left: 4px solid var(--toast-error);
+        }
+
+        .toast.warn {
+            border-left: 4px solid var(--toast-warn);
+        }
+
+        .toast.info {
+            border-left: 4px solid var(--toast-info);
+        }
+
+        .toast.success {
+            border-left: 4px solid var(--toast-success);
+        }
+
+        .toast-icon {
+            flex-shrink: 0;
+            font-size: 18px;
+        }
+
+        .toast-msg {
+            flex: 1;
+            line-height: 1.4;
+            word-break: break-word;
+        }
+
+        .toast-close {
+            flex-shrink: 0;
+            cursor: pointer;
+            opacity: 0.6;
+            font-size: 16px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: opacity 0.2s;
+            background: none;
+            border: none;
+            color: #fff;
+        }
+
+        .toast-close:hover {
+            opacity: 1;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        @keyframes toastSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes toastSlideOut {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
         }
 
         #ui {
             position: absolute;
-            top: 10px;
-            left: 10px;
+            top: 16px;
+            left: 16px;
             z-index: 10;
-            background: rgba(0, 0, 0, .6);
-            padding: 10px;
-            border-radius: 8px;
-            color: white;
+            background: var(--panel-bg);
+            padding: 16px 18px;
+            border-radius: var(--radius);
+            color: var(--text);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            min-width: 290px;
+            max-width: 390px;
+            user-select: none;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-height: calc(100vh - 32px);
+            overflow-y: auto;
+            transition: all 0.3s ease;
+        }
+
+        /* 最小化状态 */
+        #ui.collapsed {
+            min-width: auto;
+            max-width: 48px;
+            padding: 8px;
+            border-radius: 50%;
+            overflow: hidden;
+            max-height: 48px;
+            gap: 0;
+        }
+
+        #ui.collapsed>*:not(.ui-minimize-btn) {
+            display: none;
+        }
+
+        .ui-minimize-btn {
+            position: absolute;
+            top: 6px;
+            right: 8px;
+            width: 28px;
+            height: 28px;
+            background: var(--btn-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background var(--transition);
+            z-index: 11;
+            line-height: 1;
+        }
+
+        #ui.collapsed .ui-minimize-btn {
+            position: static;
+            margin: 0 auto;
+        }
+
+        .ui-minimize-btn:hover {
+            background: var(--btn-hover);
+        }
+
+        .ui-section {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .ui-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: #aaa;
+            margin-bottom: 1px;
+        }
+
+        .ui-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        input[type="file"] {
+            color: #ccc;
+            font-size: 12px;
+            max-width: 200px;
+            cursor: pointer;
+        }
+
+        input[type="file"]::file-selector-button {
+            background: var(--btn-bg);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            color: var(--text);
+            padding: 5px 12px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background var(--transition);
+        }
+
+        input[type="file"]::file-selector-button:hover {
+            background: var(--btn-hover);
+        }
+
+        input[type="text"],
+        input[type="password"],
+        input[type="number"],
+        select {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            color: var(--text);
+            padding: 6px 10px;
+            font-size: 12px;
+            width: 100%;
+            box-sizing: border-box;
+            outline: none;
+            transition: border-color var(--transition);
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus,
+        input[type="number"]:focus,
+        select:focus {
+            border-color: var(--accent);
         }
 
         button {
-            margin-top: 5px;
+            background: var(--btn-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            padding: 8px 14px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all var(--transition);
+            white-space: nowrap;
+            letter-spacing: 0.02em;
+        }
+
+        button:hover {
+            background: var(--btn-hover);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        button:disabled {
+            opacity: 0.4;
+            pointer-events: none;
+            filter: grayscale(0.3);
+        }
+
+        button.btn-primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+            font-weight: 600;
+        }
+
+        button.btn-primary:hover {
+            background: var(--accent-active);
+            border-color: var(--accent-active);
+        }
+
+        button.btn-danger {
+            background: var(--danger);
+            border-color: var(--danger);
+            color: #fff;
+            font-weight: 600;
+        }
+
+        button.btn-danger:hover {
+            background: var(--danger-hover);
+            border-color: var(--danger-hover);
+        }
+
+        .ai-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            padding: 8px 12px;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.25);
+        }
+
+        .ai-status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .ai-status-dot.idle {
+            background: #666;
+        }
+
+        .ai-status-dot.running {
+            background: #4caf50;
+            box-shadow: 0 0 8px rgba(76, 175, 80, 0.6);
+            animation: pulse 1.2s infinite;
+        }
+
+        .ai-status-dot.stopped {
+            background: #f0a040;
+        }
+
+        @keyframes pulse {
+            0%,
+            100% {
+                box-shadow: 0 0 6px rgba(76, 175, 80, 0.5);
+            }
+            50% {
+                box-shadow: 0 0 18px rgba(76, 175, 80, 0.9);
+            }
+        }
+
+        .collapsible-header {
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: #aaa;
+            padding: 4px 0;
+            user-select: none;
+        }
+
+        .collapsible-header:hover {
+            color: #ccc;
+        }
+
+        .collapsible-arrow {
+            transition: transform 0.25s ease;
+            font-size: 10px;
+        }
+
+        .collapsible-arrow.open {
+            transform: rotate(90deg);
+        }
+
+        .collapsible-content {
+            overflow: hidden;
+            max-height: 0;
+            transition: max-height 0.35s ease;
+        }
+
+        .collapsible-content.open {
+            max-height: 400px;
+        }
+
+        .anim-grid,
+        .expr-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+            gap: 4px;
+        }
+
+        .anim-btn,
+        .expr-btn {
+            background: var(--btn-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            padding: 7px 3px;
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all var(--transition);
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .anim-btn:hover:not(:disabled),
+        .expr-btn:hover:not(:disabled) {
+            background: var(--btn-hover);
+            border-color: rgba(255, 255, 255, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .anim-btn.active-anim,
+        .expr-btn.active-expr {
+            background: var(--preset-active);
+            border-color: #6a9ee6;
+            color: white;
+            box-shadow: 0 0 10px rgba(58, 111, 197, 0.45);
+            font-weight: 600;
+        }
+
+        .preset-group {
+            display: flex;
+            gap: 3px;
+            background: rgba(0, 0, 0, 0.35);
+            border-radius: 7px;
+            padding: 3px;
+        }
+
+        .preset-btn {
+            flex: 1;
+            border: none;
+            background: transparent;
+            color: #999;
+            padding: 6px 7px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+            transition: all var(--transition);
+        }
+
+        .preset-btn:hover {
+            color: #ddd;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .preset-btn.active {
+            background: var(--preset-active);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(58, 111, 197, 0.4);
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            margin-right: 4px;
+            vertical-align: middle;
+            position: relative;
+            top: -1px;
+        }
+
+        .status-dot.on {
+            background: #4caf50;
+            box-shadow: 0 0 6px rgba(76, 175, 80, 0.5);
+        }
+
+        .status-dot.off {
+            background: #666;
+        }
+
+        .info-text {
+            font-size: 10px;
+            color: #888;
+            margin-top: 1px;
+            line-height: 1.4;
+        }
+
+        .loading-text {
+            color: #f0c040;
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .fps-display {
+            font-size: 11px;
+            color: #aaa;
+            margin-left: auto;
+        }
+
+        @media (max-width: 480px) {
+            #ui {
+                top: 6px;
+                left: 6px;
+                padding: 10px 12px;
+                gap: 8px;
+                min-width: auto;
+                max-width: calc(100vw - 24px);
+                max-height: calc(100vh - 20px);
+                font-size: 11px;
+            }
+            .anim-btn,
+            .expr-btn {
+                padding: 5px 2px;
+                font-size: 10px;
+            }
+            .preset-btn {
+                padding: 5px 5px;
+                font-size: 10px;
+            }
+            #toastContainer {
+                width: calc(100vw - 20px);
+                top: 8px;
+            }
+            .toast {
+                font-size: 11px;
+                padding: 10px 12px;
+            }
         }
     </style>
 </head>
 
 <body>
 
-    <div id="ui">
+    <div id="toastContainer"></div>
 
-        <div>
-            VRM:
+    <div id="ui">
+        <div class="ui-minimize-btn" title="最小化/展开">_</div>
+
+        <div class="ui-section">
+            <span class="ui-label">📦 VRM 模型</span>
             <input id="vrmInput" type="file" accept=".vrm">
         </div>
 
-        <br>
-
-        <div>
-            VRMA:
-            <input id="vrmaInput" type="file" accept=".vrma">
+        <div class="ui-section">
+            <div class="collapsible-header" id="apiSettingsHeader">
+                <span class="collapsible-arrow" id="apiArrow">▶</span> ⚙️ API 设置 (已预填中转站)
+            </div>
+            <div class="collapsible-content" id="apiSettingsContent">
+                <div style="display:flex;flex-direction:column;gap:6px;padding-top:4px;">
+                    <input type="text" id="apiBaseUrl" placeholder="https://run.v3.cm/v1">
+                    <input type="password" id="apiKey" placeholder="sk-...">
+                    <input type="text" id="llmModel" placeholder="gemini-2.5-flash">
+                    <input type="text" id="ttsModel" placeholder="qwen-tts">
+                    <input type="text" id="ttsVoice" placeholder="Cherry">
+                    <span class="info-text">已配置默认中转站，可直接使用</span>
+                </div>
+            </div>
         </div>
 
-        <br>
+        <div class="ui-section">
+            <span class="ui-label">🤖 AI 语音模式</span>
+            <div class="ai-status" id="aiStatus">
+                <span class="ai-status-dot idle" id="aiStatusDot"></span>
+                <span id="aiStatusText">未启动</span>
+            </div>
+            <div class="ui-row">
+                <button class="btn-primary" id="btnStartAI">▶ 开始AI模式</button>
+                <button class="btn-danger" id="btnStopAI" disabled>⏹ 结束AI模式</button>
+            </div>
+            <span class="info-text" id="aiInfo" style="display:none;"></span>
+        </div>
 
-        <button id="playBtn">
-            播放动画
-        </button>
+        <div class="ui-section">
+            <span class="ui-label">😊 表情</span>
+            <div id="exprButtonContainer" class="expr-grid">
+                <span class="info-text" style="grid-column:1/-1;">请先加载模型</span>
+            </div>
+        </div>
 
+        <div class="ui-section">
+            <span class="ui-label">🎬 动画</span>
+            <div id="animButtonContainer" class="anim-grid">
+                <span class="info-text" style="grid-column:1/-1;">请先加载 VRM 模型</span>
+            </div>
+            <span class="info-text" id="animStatus" style="display:none;"></span>
+        </div>
+
+        <div class="ui-section">
+            <span class="ui-label">🎨 渲染精细度</span>
+            <div class="preset-group" id="presetGroup">
+                <button class="preset-btn" data-preset="low">低</button>
+                <button class="preset-btn" data-preset="medium">标准</button>
+                <button class="preset-btn active" data-preset="high">高</button>
+                <button class="preset-btn" data-preset="ultra">极致</button>
+            </div>
+            <span class="info-text" id="presetInfo"></span>
+
+            <!-- 高级画质设置 -->
+            <div class="collapsible-header" id="advancedGraphicsHeader" style="margin-top:4px;">
+                <span class="collapsible-arrow" id="advancedGraphicsArrow">▶</span> 高级画质设置
+            </div>
+            <div class="collapsible-content" id="advancedGraphicsContent">
+                <div style="display:flex;flex-direction:column;gap:6px;padding-top:4px;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <label style="font-size:11px;min-width:60px;">渲染倍率</label>
+                        <input type="range" id="renderScale" min="0.5" max="2.0" step="0.1" value="1.0" style="flex:1;">
+                        <span id="renderScaleValue" style="font-size:11px;width:35px;">1.0</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <label style="font-size:11px;min-width:60px;">抗锯齿</label>
+                        <input type="checkbox" id="advancedAA" checked>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <label style="font-size:11px;min-width:60px;">阴影</label>
+                        <input type="checkbox" id="advancedShadows" checked>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <label style="font-size:11px;min-width:60px;">阴影分辨率</label>
+                        <select id="advancedShadowRes">
+                            <option value="512">512</option>
+                            <option value="1024">1024</option>
+                            <option value="2048" selected>2048</option>
+                            <option value="4096">4096</option>
+                        </select>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <label style="font-size:11px;min-width:60px;">阴影类型</label>
+                        <select id="advancedShadowType">
+                            <option value="PCF">PCF (硬)</option>
+                            <option value="PCFSoft" selected>PCF Soft (软)</option>
+                        </select>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <label style="font-size:11px;min-width:60px;">像素比</label>
+                        <input type="number" id="advancedPixelRatio" min="0.5" max="2.0" step="0.1" value="1.0" style="width:70px;">
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-size:11px;">当前帧率: </span>
+                        <span id="fpsCounter" style="font-size:11px;color:#4caf50;">-- FPS</span>
+                    </div>
+                    <button id="applyAdvancedSettings" class="btn-primary" style="margin-top:4px;">应用高级设置</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script type="importmap">
-{
-  "imports": {
-    "three":
-      "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
-
-    "three/addons/":
-      "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
-
-    "@pixiv/three-vrm":
-      "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3/lib/three-vrm.module.min.js",
-
-    "@pixiv/three-vrm-animation":
-      "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm-animation@3/lib/three-vrm-animation.module.min.js"
-  }
-}
-</script>
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+                "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3/lib/three-vrm.module.min.js",
+                "@pixiv/three-vrm-animation": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm-animation@3/lib/three-vrm-animation.module.min.js"
+            }
+        }
+    </script>
 
     <script type="module">
-
         import * as THREE from "three";
+        import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+        import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+        import { VRMLoaderPlugin } from "@pixiv/three-vrm";
+        import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from "@pixiv/three-vrm-animation";
 
-        import { OrbitControls }
-            from "three/addons/controls/OrbitControls.js";
+        // ==================== 常量 ====================
+        const IDLE_FILE = "waiting.vrma";
+        const INTRO_FILE = "appearing.vrma";
 
-        import { GLTFLoader }
-            from "three/addons/loaders/GLTFLoader.js";
+        const ANIMATION_FILES = [
+            { file: "waiting.vrma", label: "待机" },
+            { file: "appearing.vrma", label: "出现" },
+            { file: "greet.vrma", label: "打招呼" },
+            { file: "liked.vrma", label: "点赞" },
+            { file: "pose.vrma", label: "摆姿势" },
+            { file: "shoot.vrma", label: "射击" },
+            { file: "showbody.vrma", label: "展示" },
+            { file: "spin.vrma", label: "旋转" },
+            { file: "squat.vrma", label: "蹲下" },
+            { file: "yeah.vrma", label: "耶✌" },
+        ];
 
-        import {
-            VRMLoaderPlugin
+        const EXPRESSION_PRESETS = [
+            { name: "happy", label: "😊 微笑", defaultWeight: 1.0 },
+            { name: "angry", label: "😡 生气", defaultWeight: 1.0 },
+            { name: "sad", label: "😢 悲伤", defaultWeight: 1.0 },
+            { name: "surprised", label: "😲 惊讶", defaultWeight: 1.0 },
+            { name: "relaxed", label: "😌 放松", defaultWeight: 1.0 },
+            { name: "shy", label: "😳 害羞", defaultWeight: 1.0 },
+            { name: "fun", label: "😜 嬉皮", defaultWeight: 1.0 },
+            { name: "love", label: "😍 喜爱", defaultWeight: 1.0 },
+            { name: "serious", label: "😐 严肃", defaultWeight: 1.0 },
+            { name: "neutral", label: "😶 无表情", defaultWeight: 1.0 },
+        ];
+
+        const ACTION_TAG_MAP = {
+            waiting: "waiting.vrma",
+            yeah: "yeah.vrma",
+            squat: "squat.vrma",
+            spin: "spin.vrma",
+            showbody: "showbody.vrma",
+            shoot: "shoot.vrma",
+            pose: "pose.vrma",
+            liked: "liked.vrma",
+            greet: "greet.vrma",
+        };
+        const VALID_ACTION_TAGS = new Set(Object.keys(ACTION_TAG_MAP));
+
+        const EXPR_TAG_MAP = {
+            smile: "happy",
+            happy: "happy",
+            angry: "angry",
+            sad: "sad",
+            surprise: "surprised",
+            relax: "relaxed",
+            shy: "shy",
+            love: "love",
+            none: "neutral",
+        };
+        const VALID_EXPR_TAGS = new Set(Object.keys(EXPR_TAG_MAP));
+        const DEFAULT_EXPR = "relaxed";
+
+        const QUALITY_PRESETS = {
+            low: { label: "低", pixelRatio: 0.5, antialias: false, shadows: false, shadowMapSize: 512, shadowMapType: THREE.PCFShadowMap },
+            medium: { label: "标准", pixelRatio: 1.0, antialias: false, shadows: false, shadowMapSize: 1024, shadowMapType: THREE.PCFShadowMap },
+            high: { label: "高", pixelRatio: 1.0, antialias: true, shadows: true, shadowMapSize: 2048, shadowMapType: THREE.PCFShadowMap },
+            ultra: { label: "极致", pixelRatio: 2.0, antialias: true, shadows: true, shadowMapSize: 4096, shadowMapType: THREE.PCFSoftShadowMap },
+        };
+        let currentPreset = "high";
+        const preset = () => QUALITY_PRESETS[currentPreset];
+
+        // ==================== ToastController ====================
+        class ToastController {
+            constructor() { this.container = document.getElementById("toastContainer"); }
+            _createToast(type, message, duration = 3500) {
+                const icons = { error: "❌", warn: "⚠️", info: "ℹ️", success: "✅" };
+                const toast = document.createElement("div");
+                toast.className = `toast ${type}`;
+                toast.innerHTML = `<span class="toast-icon">${icons[type] || "ℹ️"}</span><span class="toast-msg">${message}</span><button class="toast-close" title="关闭">×</button>`;
+                const closeBtn = toast.querySelector(".toast-close");
+                const remove = () => {
+                    if (toast.parentNode && !toast.classList.contains("removing")) {
+                        toast.classList.add("removing");
+                        setTimeout(() => { if (toast.parentNode) toast.remove(); }, 300);
+                    }
+                };
+                closeBtn.addEventListener("click", remove);
+                toast._timer = setTimeout(remove, duration);
+                toast._remove = remove;
+                this.container.appendChild(toast);
+                const allToasts = this.container.querySelectorAll(".toast");
+                if (allToasts.length > 5) {
+                    const oldest = allToasts[0];
+                    if (oldest._remove) oldest._remove();
+                }
+                return toast;
+            }
+            error(msg, duration) { return this._createToast("error", msg, duration); }
+            warn(msg, duration) { return this._createToast("warn", msg, duration); }
+            info(msg, duration) { return this._createToast("info", msg, duration); }
+            success(msg, duration) { return this._createToast("success", msg, duration); }
         }
-            from "@pixiv/three-vrm";
+        const toast = new ToastController();
 
-        import {
-            VRMAnimationLoaderPlugin,
-            createVRMAnimationClip
-        }
-            from "@pixiv/three-vrm-animation";
+        // ==================== 场景初始化 ====================
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x222222);
 
-        let scene = new THREE.Scene();
-
-        scene.background =
-            new THREE.Color(0x222222);
-
-        let camera =
-            new THREE.PerspectiveCamera(
-                35,
-                window.innerWidth / window.innerHeight,
-                0.1,
-                100
-            );
-
+        const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 100);
         camera.position.set(0, 1.4, 3);
 
-        let renderer =
-            new THREE.WebGLRenderer({
-                antialias: true
-            });
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1);
+        scene.add(ambientLight);
 
-        renderer.setSize(
-            window.innerWidth,
-            window.innerHeight
-        );
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+        directionalLight.position.set(1, 1.5, 1);
+        scene.add(directionalLight);
 
-        document.body.appendChild(
-            renderer.domElement
-        );
+        function configureLightShadows(light, presetKeyOrCfg) {
+            const cfg = typeof presetKeyOrCfg === 'string' ? QUALITY_PRESETS[presetKeyOrCfg] : presetKeyOrCfg;
+            light.castShadow = cfg.shadows;
+            if (cfg.shadows) {
+                light.shadow.mapSize.width = cfg.shadowMapSize;
+                light.shadow.mapSize.height = cfg.shadowMapSize;
+                light.shadow.camera.left = -2;
+                light.shadow.camera.right = 2;
+                light.shadow.camera.top = 3;
+                light.shadow.camera.bottom = -0.5;
+                light.shadow.camera.near = 0.1;
+                light.shadow.camera.far = 15;
+                light.shadow.bias = -0.0003;
+                light.shadow.normalBias = 0.02;
+            }
+        }
+        configureLightShadows(directionalLight, currentPreset);
 
-        let controls =
-            new OrbitControls(
-                camera,
-                renderer.domElement
-            );
+        const groundGeometry = new THREE.CircleGeometry(2.5, 48);
+        const groundMaterial = new THREE.ShadowMaterial({ opacity: 0.45 });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = 0.001;
+        ground.receiveShadow = true;
+        scene.add(ground);
 
-        let light =
-            new THREE.DirectionalLight(
-                0xffffff,
-                2
-            );
+        let renderer = new THREE.WebGLRenderer({ antialias: preset().antialias, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(preset().pixelRatio, window.devicePixelRatio));
+        renderer.shadowMap.enabled = preset().shadows;
+        renderer.shadowMap.type = preset().shadowMapType;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        document.body.appendChild(renderer.domElement);
 
-        light.position.set(1, 1, 1);
+        let controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 1.0, 0);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+        controls.minDistance = 0.8;
+        controls.maxDistance = 8;
+        controls.maxPolarAngle = Math.PI * 0.75;
+        controls.update();
 
-        scene.add(light);
-
-        scene.add(
-            new THREE.AmbientLight(
-                0xffffff,
-                1
-            )
-        );
-
-        let clock =
-            new THREE.Clock();
-
+        const clock = new THREE.Clock();
         let currentVRM = null;
-        let mixer = null;
-        let currentVRMA = null;
+        let isLoadingAnimations = false;
+        let currentExpression = null;
+        let blinkState = { timer: 0, nextBlink: 2.5, isBlinking: false, blinkDuration: 0.1, blinkProgress: 0 };
 
-        function animate() {
+        // FPS 计数器
+        let fpsFrames = 0;
+        let fpsTime = 0;
+        let currentFPS = 0;
 
-            requestAnimationFrame(animate);
+        // ==================== ExpressionController ====================
+        class ExpressionController {
+            setExpression(expressionName) {
+                if (!currentVRM || !currentVRM.expressionManager) return;
+                const manager = currentVRM.expressionManager;
+                Object.keys(manager._expressionMap || {}).forEach(name => {
+                    if (name !== "blink") manager.setValue(name, 0);
+                });
+                if (expressionName && manager.getExpression(expressionName)) manager.setValue(expressionName, 1);
+                currentExpression = expressionName;
+                this._updateUI();
+                console.log(`[表情] 切换到: ${expressionName}`);
+                toast.info(`表情: ${expressionName}`, 1500);
+            }
+            resetToDefault() { this.setExpression(DEFAULT_EXPR); }
+            _updateUI() {
+                document.querySelectorAll(".expr-btn").forEach(btn => {
+                    btn.classList.toggle("active-expr", btn.title === currentExpression);
+                });
+            }
+        }
+        const expressionController = new ExpressionController();
 
-            let delta =
-                clock.getDelta();
+        function buildExpressionButtons() {
+            const container = document.getElementById("exprButtonContainer");
+            container.innerHTML = "";
+            EXPRESSION_PRESETS.forEach(expr => {
+                const btn = document.createElement("button");
+                btn.className = "expr-btn";
+                btn.textContent = expr.label;
+                btn.title = expr.name;
+                btn.addEventListener("click", () => expressionController.setExpression(expr.name));
+                container.appendChild(btn);
+            });
+            expressionController._updateUI();
+        }
 
-            if (mixer) {
-                mixer.update(delta);
+        // ==================== 单一动画控制器 ====================
+        const AnimState = { IDLE: "IDLE", PLAYING: "PLAYING", TRANSITIONING: "TRANSITIONING" };
+
+        class AnimationController {
+            constructor() {
+                this.mixer = null;
+                this.actions = new Map();
+                this.currentAction = null;
+                this.currentFile = null;
+                this.state = AnimState.IDLE;
+                this._isIdle = true;
+                this._transTimer = 0;
+                this._transTarget = AnimState.IDLE;
+                this._onFinishedBound = this._onFinished.bind(this);
             }
 
+            setup(vrm) {
+                if (this.mixer) {
+                    this.mixer.removeEventListener("finished", this._onFinishedBound);
+                    this.mixer.stopAllAction();
+                }
+                this.actions.clear();
+                this.currentAction = null;
+                this.currentFile = null;
+                this.state = AnimState.IDLE;
+                this._isIdle = true;
+                this._transTimer = 0;
+                this.mixer = new THREE.AnimationMixer(vrm.scene);
+                this.mixer.addEventListener("finished", this._onFinishedBound);
+                this._updateActiveButton(null);
+            }
+
+            registerClip(fileName, clip) {
+                if (!this.mixer) return;
+                this.actions.set(fileName, this.mixer.clipAction(clip));
+            }
+
+            hasAction(fileName) { return this.actions.has(fileName); }
+
+            playAction(fileName, fade = 0.3) {
+                this._play(fileName, { loop: false, fade, isIdle: false });
+                console.log(`[动画] 播放: ${fileName}`);
+                toast.info(`动画: ${fileName}`, 1500);
+            }
+            returnToIdle(fade = 0.4) {
+                if (!this.actions.has(IDLE_FILE)) return;
+                this._play(IDLE_FILE, { loop: true, fade, isIdle: true });
+                console.log(`[动画] 回到待机`);
+                toast.info(`动画: 待机`, 1500);
+            }
+            playIntro(fade = 0) {
+                if (this.actions.has(INTRO_FILE)) {
+                    this._play(INTRO_FILE, { loop: false, fade, isIdle: false });
+                    console.log(`[动画] 开场动画`);
+                } else {
+                    this.returnToIdle(0);
+                }
+            }
+
+            _play(fileName, { loop = false, fade = 0.3, isIdle = false } = {}) {
+                if (!this.mixer || !this.actions.has(fileName)) return;
+                const newAction = this.actions.get(fileName);
+
+                if (newAction === this.currentAction) {
+                    if (loop) return;
+                    newAction.stopFading();
+                    newAction.reset();
+                    newAction.setLoop(THREE.LoopOnce, 1);
+                    newAction.clampWhenFinished = true;
+                    newAction.enabled = true;
+                    newAction.setEffectiveTimeScale(1);
+                    newAction.setEffectiveWeight(1);
+                    newAction.play();
+                    this.state = AnimState.PLAYING;
+                    this._isIdle = false;
+                    return;
+                }
+
+                for (const action of this.actions.values()) {
+                    if (action === this.currentAction) {
+                        action.stopFading();
+                        action.enabled = true;
+                        action.setEffectiveWeight(1);
+                    } else if (action !== newAction) {
+                        action.stopFading();
+                        action.setEffectiveWeight(0);
+                    }
+                }
+
+                const oldAction = this.currentAction;
+
+                newAction.stopFading();
+                newAction.reset();
+                newAction.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
+                newAction.clampWhenFinished = !loop;
+                newAction.enabled = true;
+                newAction.setEffectiveTimeScale(1);
+                newAction.setEffectiveWeight(1);
+
+                if (oldAction && fade > 0) {
+                    oldAction.fadeOut(fade);
+                    newAction.fadeIn(fade);
+                    newAction.play();
+                    this.state = AnimState.TRANSITIONING;
+                    this._transTimer = fade;
+                    this._transTarget = isIdle ? AnimState.IDLE : AnimState.PLAYING;
+                } else {
+                    newAction.play();
+                    this.state = isIdle ? AnimState.IDLE : AnimState.PLAYING;
+                }
+
+                this.currentAction = newAction;
+                this.currentFile = fileName;
+                this._isIdle = isIdle;
+                this._updateActiveButton(isIdle ? null : fileName);
+            }
+
+            update(delta) {
+                if (!this.mixer) return;
+                this.mixer.update(delta);
+                if (this.state === AnimState.TRANSITIONING) {
+                    this._transTimer -= delta;
+                    if (this._transTimer <= 0) {
+                        this.currentAction.stopFading();
+                        this.currentAction.setEffectiveWeight(1);
+                        this.state = this._transTarget;
+                    }
+                }
+            }
+
+            _onFinished(event) {
+                if (event.action === this.currentAction && !this._isIdle) {
+                    this.returnToIdle(0.4);
+                }
+            }
+
+            _updateActiveButton(fileName) {
+                document.querySelectorAll(".anim-btn").forEach(btn => {
+                    btn.classList.toggle("active-anim", btn.dataset.file === fileName);
+                });
+            }
+        }
+        const animationController = new AnimationController();
+
+        // ==================== 独立眨眼 ====================
+        function updateBlink(delta) {
+            if (!currentVRM || !currentVRM.expressionManager) return;
+            blinkState.timer += delta;
+            if (!blinkState.isBlinking) {
+                if (blinkState.timer >= blinkState.nextBlink) {
+                    blinkState.isBlinking = true;
+                    blinkState.blinkProgress = 0;
+                    blinkState.timer = 0;
+                    blinkState.nextBlink = 2.0 + Math.random() * 3.0;
+                }
+            } else {
+                blinkState.blinkProgress += delta / blinkState.blinkDuration;
+                if (blinkState.blinkProgress >= 1.0) {
+                    blinkState.isBlinking = false;
+                    blinkState.blinkProgress = 1.0;
+                }
+            }
+            let blinkWeight = 0;
+            if (blinkState.isBlinking) {
+                const t = blinkState.blinkProgress;
+                blinkWeight = t < 0.3 ? t / 0.3 : 1.0 - (t - 0.3) / 0.7;
+                blinkWeight = Math.max(0, Math.min(1, blinkWeight));
+            }
+            currentVRM.expressionManager.setValue("blink", blinkWeight);
+        }
+
+        // ==================== 渲染循环 ====================
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = Math.min(clock.getDelta(), 0.1);
+
             if (currentVRM) {
+                animationController.update(delta);
+                updateBlink(delta);
                 currentVRM.update(delta);
             }
 
-            renderer.render(
-                scene,
-                camera
-            );
-        }
+            controls.update();
+            renderer.render(scene, camera);
 
+            // FPS 计算
+            fpsFrames++;
+            fpsTime += delta;
+            if (fpsTime >= 0.5) {
+                currentFPS = Math.round(fpsFrames / fpsTime);
+                document.getElementById("fpsCounter").textContent = `${currentFPS} FPS`;
+                fpsFrames = 0;
+                fpsTime = 0;
+            }
+        }
         animate();
 
-        document
-            .getElementById("vrmInput")
-            .addEventListener(
-                "change",
-                async e => {
 
-                    let file =
-                        e.target.files[0];
-
-                    if (!file) return;
-
-                    let url =
-                        URL.createObjectURL(file);
-
-                    let loader =
-                        new GLTFLoader();
-
-                    loader.register(
-                        parser =>
-                            new VRMLoaderPlugin(parser)
-                    );
-
-                    loader.load(
-                        url,
-                        gltf => {
-
-                            if (currentVRM) {
-                                scene.remove(
-                                    currentVRM.scene
-                                );
-                            }
-
-                            currentVRM =
-                                gltf.userData.vrm;
-
-                            scene.add(
-                                currentVRM.scene
-                            );
-
-                            console.log(
-                                "VRM loaded"
-                            );
-                        }
-                    );
-                });
-
-        document
-            .getElementById("vrmaInput")
-            .addEventListener(
-                "change",
-                async e => {
-
-                    let file =
-                        e.target.files[0];
-
-                    if (!file) return;
-
-                    let url =
-                        URL.createObjectURL(file);
-
-                    let loader =
-                        new GLTFLoader();
-
-                    loader.register(
-                        parser =>
-                            new VRMAnimationLoaderPlugin(parser)
-                    );
-
-                    loader.load(
-                        url,
-                        gltf => {
-
-                            currentVRMA =
-                                gltf.userData.vrmAnimations[0];
-
-                            console.log(
-                                "VRMA loaded"
-                            );
-                        }
-                    );
-                });
-
-        document
-            .getElementById("playBtn")
-            .onclick = () => {
-
-                if (!currentVRM) return;
-                if (!currentVRMA) return;
-
-                mixer =
-                    new THREE.AnimationMixer(
-                        currentVRM.scene
-                    );
-
-                let clip =
-                    createVRMAnimationClip(
-                        currentVRMA,
-                        currentVRM
-                    );
-
-                mixer
-                    .clipAction(clip)
-                    .reset()
-                    .play();
-            };
-
-        window.addEventListener(
-            "resize",
-            () => {
-
-                camera.aspect =
-                    window.innerWidth /
-                    window.innerHeight;
-
-                camera.updateProjectionMatrix();
-
-                renderer.setSize(
-                    window.innerWidth,
-                    window.innerHeight
-                );
+        // ==================== VRM 加载与动画预加载 ====================
+        document.getElementById("vrmInput").addEventListener("change", async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const url = URL.createObjectURL(file);
+            const loader = new GLTFLoader();
+            loader.register((parser) => new VRMLoaderPlugin(parser));
+            loader.load(url, (gltf) => {
+                if (currentVRM) scene.remove(currentVRM.scene);
+                currentVRM = gltf.userData.vrm;
+                scene.add(currentVRM.scene);
+                updateVRMShadowProps();
+                buildExpressionButtons();
+                expressionController.resetToDefault();
+                toast.success("VRM 模型加载成功");
+                preloadAllAnimations(currentVRM);
+            }, undefined, (err) => {
+                toast.error("VRM 加载失败: " + (err.message || "未知错误"));
             });
+        });
+
+        function updateVRMShadowProps() {
+            if (!currentVRM) return;
+            const enableShadows = renderer.shadowMap.enabled;
+            currentVRM.scene.traverse(child => {
+                if (child.isMesh) {
+                    child.castShadow = enableShadows;
+                    child.receiveShadow = enableShadows;
+                }
+            });
+        }
+
+        async function preloadAllAnimations(vrm) {
+            if (isLoadingAnimations) return;
+            isLoadingAnimations = true;
+            const container = document.getElementById("animButtonContainer");
+            container.innerHTML = '<span class="loading-text" style="grid-column:1/-1;">⏳ 加载动画文件中...</span>';
+            const statusEl = document.getElementById("animStatus");
+            statusEl.style.display = "none";
+
+            animationController.setup(vrm);
+
+            const loader = new GLTFLoader();
+            loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
+
+            const files = [...new Set([IDLE_FILE, ...ANIMATION_FILES.map(f => f.file)])];
+            const total = files.length;
+            let loadedCount = 0;
+
+            await Promise.all(files.map(file => new Promise((resolve) => {
+                loader.load(
+                    `./${file}`,
+                    (gltf) => {
+                        try {
+                            const vrmaData = gltf.userData.vrmAnimations[0];
+                            const clip = createVRMAnimationClip(vrmaData, vrm);
+                            animationController.registerClip(file, clip);
+                        } catch (err) {
+                            console.warn(`⚠️ 解析失败: ${file}`, err);
+                        }
+                        loadedCount++;
+                        statusEl.style.display = "block";
+                        statusEl.textContent = `⏳ 加载中 ${loadedCount}/${total}`;
+                        resolve();
+                    },
+                    undefined,
+                    (error) => {
+                        console.warn(`⚠️ 加载失败: ${file}`, error);
+                        loadedCount++;
+                        statusEl.textContent = `⚠️ 部分加载失败 (${loadedCount}/${total})`;
+                        resolve();
+                    }
+                );
+            })));
+
+            buildAnimationButtons();
+
+            if (!animationController.hasAction(IDLE_FILE)) {
+                toast.warn(`缺少基础待机文件 ${IDLE_FILE}，请将其放在页面同目录`);
+            }
+
+            animationController.playIntro(0);
+
+            isLoadingAnimations = false;
+            statusEl.textContent = "✅ 动画就绪";
+            setTimeout(() => { statusEl.style.display = "none"; }, 2000);
+        }
+
+        function buildAnimationButtons() {
+            const container = document.getElementById("animButtonContainer");
+            container.innerHTML = "";
+            ANIMATION_FILES.forEach(item => {
+                const btn = document.createElement("button");
+                btn.className = "anim-btn";
+                btn.textContent = item.label;
+                btn.dataset.file = item.file;
+                btn.title = item.file;
+                btn.addEventListener("click", () => {
+                    if (!animationController.hasAction(item.file)) return;
+                    if (item.file === IDLE_FILE) animationController.returnToIdle(0.4);
+                    else animationController.playAction(item.file, 0.3);
+                });
+                container.appendChild(btn);
+            });
+        }
+
+        // ==================== 画质切换（含高级设置） ====================
+        let useCustomSettings = false; // 是否手动调整了高级设置
+        let customCfg = {
+            renderScale: 1.0,
+            antialias: true,
+            shadows: true,
+            shadowMapSize: 2048,
+            shadowMapType: THREE.PCFShadowMap,
+            pixelRatio: 1.0,
+        };
+
+        function rebuildRenderer(antialias) {
+            const oldCanvas = renderer.domElement;
+            const oldTarget = controls.target.clone();
+            const wasShadowEnabled = renderer.shadowMap.enabled;
+            const oldShadowType = renderer.shadowMap.type;
+            controls.dispose();
+            const newRenderer = new THREE.WebGLRenderer({ antialias, powerPreference: "high-performance" });
+            newRenderer.setSize(window.innerWidth, window.innerHeight);
+            newRenderer.setPixelRatio(Math.min(useCustomSettings ? customCfg.pixelRatio : preset().pixelRatio, window.devicePixelRatio));
+            newRenderer.shadowMap.enabled = wasShadowEnabled;
+            newRenderer.shadowMap.type = oldShadowType;
+            newRenderer.outputColorSpace = THREE.SRGBColorSpace;
+            newRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+            newRenderer.toneMappingExposure = 1.0;
+            if (oldCanvas.parentNode) {
+                oldCanvas.parentNode.replaceChild(newRenderer.domElement, oldCanvas);
+            } else {
+                document.body.appendChild(newRenderer.domElement);
+            }
+            renderer = newRenderer;
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.target.copy(oldTarget);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.08;
+            controls.minDistance = 0.8;
+            controls.maxDistance = 8;
+            controls.maxPolarAngle = Math.PI * 0.75;
+            controls.update();
+        }
+
+        function applyPreset(presetKey) {
+            useCustomSettings = false;
+            const cfg = QUALITY_PRESETS[presetKey];
+            const oldCfg = QUALITY_PRESETS[currentPreset];
+            if (cfg.antialias !== oldCfg.antialias) rebuildRenderer(cfg.antialias);
+            renderer.setPixelRatio(Math.min(cfg.pixelRatio, window.devicePixelRatio));
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            const shadowsToggled = cfg.shadows !== oldCfg.shadows;
+            renderer.shadowMap.enabled = cfg.shadows;
+            renderer.shadowMap.type = cfg.shadowMapType;
+            directionalLight.castShadow = cfg.shadows;
+            if (cfg.shadows && shadowsToggled) configureLightShadows(directionalLight, presetKey);
+            ground.receiveShadow = cfg.shadows;
+            updateVRMShadowProps();
+            currentPreset = presetKey;
+            updatePresetUI();
+            // 同步高级设置UI
+            syncAdvancedUIFromPreset();
+        }
+
+        function applyCustomSettings() {
+            useCustomSettings = true;
+            const needRebuild = (customCfg.antialias !== renderer.capabilities.isWebGL2 ? false : renderer.getContextAttributes().antialias !== customCfg.antialias);
+            if (needRebuild) rebuildRenderer(customCfg.antialias);
+            renderer.setPixelRatio(Math.min(customCfg.pixelRatio, window.devicePixelRatio));
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            const shadowsToggled = customCfg.shadows !== renderer.shadowMap.enabled;
+            renderer.shadowMap.enabled = customCfg.shadows;
+            renderer.shadowMap.type = customCfg.shadowMapType;
+            directionalLight.castShadow = customCfg.shadows;
+            if (customCfg.shadows && shadowsToggled) configureLightShadows(directionalLight, customCfg);
+            ground.receiveShadow = customCfg.shadows;
+            updateVRMShadowProps();
+            currentPreset = null; // 不再匹配预设
+            updatePresetUI();
+        }
+
+        function syncAdvancedUIFromPreset() {
+            const cfg = QUALITY_PRESETS[currentPreset];
+            document.getElementById("renderScale").value = cfg.pixelRatio;
+            document.getElementById("renderScaleValue").textContent = cfg.pixelRatio.toFixed(1);
+            document.getElementById("advancedAA").checked = cfg.antialias;
+            document.getElementById("advancedShadows").checked = cfg.shadows;
+            document.getElementById("advancedShadowRes").value = cfg.shadowMapSize;
+            document.getElementById("advancedShadowType").value = cfg.shadowMapType === THREE.PCFSoftShadowMap ? "PCFSoft" : "PCF";
+            document.getElementById("advancedPixelRatio").value = cfg.pixelRatio;
+            customCfg = { ...cfg, renderScale: cfg.pixelRatio };
+        }
+
+        function updatePresetUI() {
+            const cfg = useCustomSettings ? customCfg : preset();
+            document.querySelectorAll(".preset-btn").forEach(btn => {
+                btn.classList.toggle("active", !useCustomSettings && btn.dataset.preset === currentPreset);
+            });
+            const infoEl = document.getElementById("presetInfo");
+            const aaDot = cfg.antialias ? '<span class="status-dot on"></span>' : '<span class="status-dot off"></span>';
+            const shDot = cfg.shadows ? '<span class="status-dot on"></span>' : '<span class="status-dot off"></span>';
+            infoEl.innerHTML = `<span class="status-dot on"></span>像素比 ${cfg.pixelRatio.toFixed(1)}× &nbsp;|&nbsp;${aaDot}抗锯齿 &nbsp;|&nbsp;${shDot}阴影`;
+        }
+
+        // 预设按钮事件
+        document.getElementById("presetGroup").addEventListener("click", (e) => {
+            const btn = e.target.closest(".preset-btn");
+            if (!btn) return;
+            const presetKey = btn.dataset.preset;
+            if (presetKey && presetKey !== currentPreset || useCustomSettings) {
+                applyPreset(presetKey);
+            }
+        });
+
+        // 高级设置面板折叠
+        const advHeader = document.getElementById("advancedGraphicsHeader");
+        const advArrow = document.getElementById("advancedGraphicsArrow");
+        const advContent = document.getElementById("advancedGraphicsContent");
+        let advExpanded = false;
+        advHeader.addEventListener("click", () => {
+            advExpanded = !advExpanded;
+            advArrow.classList.toggle("open", advExpanded);
+            advContent.classList.toggle("open", advExpanded);
+        });
+
+        // 高级设置UI交互
+        document.getElementById("renderScale").addEventListener("input", (e) => {
+            document.getElementById("renderScaleValue").textContent = parseFloat(e.target.value).toFixed(1);
+        });
+
+        document.getElementById("applyAdvancedSettings").addEventListener("click", () => {
+            customCfg.renderScale = parseFloat(document.getElementById("renderScale").value);
+            customCfg.antialias = document.getElementById("advancedAA").checked;
+            customCfg.shadows = document.getElementById("advancedShadows").checked;
+            customCfg.shadowMapSize = parseInt(document.getElementById("advancedShadowRes").value);
+            customCfg.shadowMapType = document.getElementById("advancedShadowType").value === "PCFSoft" ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+            customCfg.pixelRatio = parseFloat(document.getElementById("advancedPixelRatio").value);
+            applyCustomSettings();
+            toast.info("高级画质设置已应用", 1500);
+        });
+
+        // 初始同步高级设置UI
+        syncAdvancedUIFromPreset();
+        updatePresetUI();
+
+        window.addEventListener("resize", () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // ==================== UI 最小化/展开 ====================
+        const uiPanel = document.getElementById("ui");
+        const minimizeBtn = document.querySelector(".ui-minimize-btn");
+        minimizeBtn.addEventListener("click", () => {
+            uiPanel.classList.toggle("collapsed");
+            minimizeBtn.textContent = uiPanel.classList.contains("collapsed") ? "+" : "_";
+        });
+
+        // ==================== API 设置 ====================
+        const apiBaseUrlInput = document.getElementById("apiBaseUrl");
+        const apiKeyInput = document.getElementById("apiKey");
+        const llmModelInput = document.getElementById("llmModel");
+        const ttsModelInput = document.getElementById("ttsModel");
+        const ttsVoiceInput = document.getElementById("ttsVoice");
+
+        function loadApiSettings() {
+            apiBaseUrlInput.value = localStorage.getItem("ai_api_base_url") || "https://run.v3.cm/v1";
+            apiKeyInput.value = localStorage.getItem("ai_api_key") || "sk-FsuAh4g9yaBtkTVQEf53F3473b3d4bD9A2822d17EbFbA6B8";
+            llmModelInput.value = localStorage.getItem("ai_llm_model") || "gemini-2.5-flash";
+            ttsModelInput.value = localStorage.getItem("ai_tts_model") || "qwen-tts";
+            ttsVoiceInput.value = localStorage.getItem("ai_tts_voice") || "Cherry";
+        }
+        function saveApiSettings() {
+            localStorage.setItem("ai_api_base_url", apiBaseUrlInput.value.trim());
+            localStorage.setItem("ai_api_key", apiKeyInput.value.trim());
+            localStorage.setItem("ai_llm_model", llmModelInput.value.trim());
+            localStorage.setItem("ai_tts_model", ttsModelInput.value.trim());
+            localStorage.setItem("ai_tts_voice", ttsVoiceInput.value.trim());
+        }
+        [apiBaseUrlInput, apiKeyInput, llmModelInput, ttsModelInput, ttsVoiceInput].forEach(el => {
+            el.addEventListener("change", saveApiSettings);
+            el.addEventListener("blur", saveApiSettings);
+        });
+        loadApiSettings();
+
+        const apiHeader = document.getElementById("apiSettingsHeader");
+        const apiArrow = document.getElementById("apiArrow");
+        const apiContent = document.getElementById("apiSettingsContent");
+        let apiExpanded = false;
+        apiHeader.addEventListener("click", () => {
+            apiExpanded = !apiExpanded;
+            apiArrow.classList.toggle("open", apiExpanded);
+            apiContent.classList.toggle("open", apiExpanded);
+        });
+
+
+        // ==================== VAD / Whisper / LLM / TTS 核心模块 ====================
+        class VADController {
+            constructor() {
+                this.audioContext = null;
+                this.mediaStream = null;
+                this.scriptNode = null;
+                this.analyserNode = null;
+                this.isListening = false;
+                this._paused = false;
+                this.onSpeechStart = null;
+                this.onSpeechEnd = null;
+                this.onSilenceTimeout = null;
+                this.silenceThreshold = 0.008;
+                this.silenceDuration = 1.5;
+                this.longSilenceDuration = 10;
+                this.minSpeechDuration = 0.4;
+                this.maxRecordingDuration = 30;
+                this._audioBuffer = [];
+                this._isSpeaking = false;
+                this._silenceTimer = 0;
+                this._speechTimer = 0;
+                this._longSilenceTimer = 0;
+                this._sampleRate = 44100;
+                this._isRecording = false;
+            }
+
+            async start() {
+                if (this.isListening) return;
+                try {
+                    this.audioContext = new(window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
+                    this._sampleRate = this.audioContext.sampleRate;
+                    this.mediaStream = await navigator.mediaDevices.getUserMedia({
+                        audio: { sampleRate: { ideal: 44100 }, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+                    });
+                    const source = this.audioContext.createMediaStreamSource(this.mediaStream);
+                    this.analyserNode = this.audioContext.createAnalyser();
+                    this.analyserNode.fftSize = 2048;
+                    this.analyserNode.smoothingTimeConstant = 0.3;
+                    source.connect(this.analyserNode);
+
+                    this.scriptNode = this.audioContext.createScriptProcessor(4096, 1, 1);
+                    source.connect(this.scriptNode);
+                    this.scriptNode.connect(this.audioContext.destination);
+
+                    this._audioBuffer = [];
+                    this._isSpeaking = false;
+                    this._silenceTimer = 0;
+                    this._speechTimer = 0;
+                    this._longSilenceTimer = 0;
+                    this._isRecording = false;
+                    this._paused = false;
+                    this.isListening = true;
+
+                    this.scriptNode.onaudioprocess = (event) => {
+                        if (!this.isListening || this._paused) return;
+                        const inputData = event.inputBuffer.getChannelData(0);
+                        const rms = this._calculateRMS(inputData);
+
+                        if (rms > this.silenceThreshold) {
+                            this._longSilenceTimer = 0;
+                            if (!this._isSpeaking) {
+                                this._silenceTimer = 0;
+                                this._speechTimer += (4096 / this._sampleRate);
+                                if (this._speechTimer >= this.minSpeechDuration) {
+                                    this._isSpeaking = true;
+                                    this._audioBuffer = [];
+                                    this._isRecording = true;
+                                    if (this.onSpeechStart) this.onSpeechStart();
+                                    console.log("[VAD] 检测到语音开始");
+                                    toast.info("🎤 语音开始", 1000);
+                                }
+                            }
+                            if (this._isRecording) this._audioBuffer.push(new Float32Array(inputData));
+                            this._silenceTimer = 0;
+                        } else if (this._isSpeaking && this._isRecording) {
+                            this._audioBuffer.push(new Float32Array(inputData));
+                            this._silenceTimer += (4096 / this._sampleRate);
+                            if (this._silenceTimer >= this.silenceDuration) this._finalizeRecording();
+                        } else if (!this._isSpeaking) {
+                            this._longSilenceTimer += (4096 / this._sampleRate);
+                            if (this._longSilenceTimer >= this.longSilenceDuration) {
+                                this._longSilenceTimer = 0;
+                                if (this.onSilenceTimeout) this.onSilenceTimeout();
+                                console.log("[VAD] 长时间静音，触发主动搭话");
+                                toast.info("🤫 长时间静音", 2000);
+                            }
+                        }
+
+                        if (this._isRecording && this._audioBuffer.length * (4096 / this._sampleRate) >= this.maxRecordingDuration) {
+                            this._finalizeRecording();
+                        }
+                    };
+                    console.log("[VAD] 开始监听");
+                    toast.info("🎤 VAD 开始监听", 1500);
+                    return true;
+                } catch (err) {
+                    toast.error("麦克风访问失败: " + (err.message || "未知错误"));
+                    throw err;
+                }
+            }
+            _calculateRMS(buffer) {
+                let sum = 0;
+                for (let i = 0; i < buffer.length; i++) sum += buffer[i] * buffer[i];
+                return Math.sqrt(sum / buffer.length);
+            }
+            _finalizeRecording() {
+                if (!this._isRecording) return;
+                this._isRecording = false;
+                this._isSpeaking = false;
+                this._speechTimer = 0;
+                this._silenceTimer = 0;
+                const audioData = this._concatBuffers();
+                this._audioBuffer = [];
+                if (this.onSpeechEnd) {
+                    console.log("[VAD] 语音结束，准备识别");
+                    toast.info("🔚 语音结束", 1000);
+                    const wavBlob = this._encodeWAV(audioData, this._sampleRate);
+                    this.onSpeechEnd(wavBlob, audioData, this._sampleRate);
+                }
+            }
+            _concatBuffers() {
+                if (this._audioBuffer.length === 0) return new Float32Array(0);
+                let totalLen = 0;
+                for (const buf of this._audioBuffer) totalLen += buf.length;
+                const result = new Float32Array(totalLen);
+                let offset = 0;
+                for (const buf of this._audioBuffer) {
+                    result.set(buf, offset);
+                    offset += buf.length;
+                }
+                return result;
+            }
+            _encodeWAV(samples, sampleRate) {
+                const numChannels = 1;
+                const bitsPerSample = 16;
+                const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+                const blockAlign = numChannels * (bitsPerSample / 8);
+                const dataSize = samples.length * (bitsPerSample / 8);
+                const buffer = new ArrayBuffer(44 + dataSize);
+                const view = new DataView(buffer);
+                this._writeString(view, 0, "RIFF");
+                view.setUint32(4, 36 + dataSize, true);
+                this._writeString(view, 8, "WAVE");
+                this._writeString(view, 12, "fmt ");
+                view.setUint32(16, 16, true);
+                view.setUint16(20, 1, true);
+                view.setUint16(22, numChannels, true);
+                view.setUint32(24, sampleRate, true);
+                view.setUint32(28, byteRate, true);
+                view.setUint16(32, blockAlign, true);
+                view.setUint16(34, bitsPerSample, true);
+                this._writeString(view, 36, "data");
+                view.setUint32(40, dataSize, true);
+                let offset = 44;
+                for (let i = 0; i < samples.length; i++) {
+                    const s = Math.max(-1, Math.min(1, samples[i]));
+                    const val = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    view.setInt16(offset, val, true);
+                    offset += 2;
+                }
+                return new Blob([buffer], { type: "audio/wav" });
+            }
+            _writeString(view, offset, str) {
+                for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+            }
+            pause() {
+                this._paused = true;
+                this._audioBuffer = [];
+                this._isRecording = false;
+                this._isSpeaking = false;
+                this._silenceTimer = 0;
+                this._speechTimer = 0;
+                this._longSilenceTimer = 0;
+                console.log("[VAD] 暂停监听");
+                toast.info("⏸️ VAD 暂停", 1000);
+            }
+            resume() {
+                this._paused = false;
+                this._longSilenceTimer = 0;
+                this._silenceTimer = 0;
+                this._speechTimer = 0;
+                console.log("[VAD] 恢复监听");
+                toast.info("▶️ VAD 恢复", 1000);
+            }
+            async stop() {
+                this.isListening = false;
+                this._paused = false;
+                if (this.scriptNode) { this.scriptNode.disconnect(); this.scriptNode = null; }
+                if (this.mediaStream) { this.mediaStream.getTracks().forEach(track => track.stop()); this.mediaStream = null; }
+                if (this.audioContext && this.audioContext.state !== "closed") {
+                    await this.audioContext.close().catch(() => {});
+                    this.audioContext = null;
+                }
+                this._audioBuffer = [];
+                this._isRecording = false;
+                this._isSpeaking = false;
+                console.log("[VAD] 停止监听");
+                toast.info("⏹️ VAD 停止", 1500);
+            }
+        }
+
+        class WhisperController {
+            async transcribe(audioBlob, apiBaseUrl, apiKey) {
+                console.log("[Whisper] 开始语音识别...");
+                toast.info("📡 发送语音到 Whisper", 1500);
+                const formData = new FormData();
+                formData.append("file", audioBlob, "recording.wav");
+                formData.append("model", "whisper-1");
+                formData.append("language", "zh");
+                const response = await fetch(`${apiBaseUrl}/audio/transcriptions`, {
+                    method: "POST", headers: { "Authorization": `Bearer ${apiKey}` }, body: formData,
+                });
+                if (!response.ok) throw new Error(`Whisper API 错误 (${response.status})`);
+                const data = await response.json();
+                console.log(`[Whisper] 识别结果: "${data.text}"`);
+                toast.info(`识别: "${data.text}"`, 2500);
+                return data.text || "";
+            }
+        }
+
+        class LLMController {
+            async *streamChat(messages, apiBaseUrl, apiKey, model) {
+                console.log("[LLM] 开始流式请求...");
+                toast.info("🧠 发送请求到 LLM", 1500);
+                const body = { model, messages, stream: true, max_tokens: 300, temperature: 0.8 };
+                const response = await fetch(`${apiBaseUrl}/chat/completions`, {
+                    method: "POST", headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
+                });
+                if (!response.ok) throw new Error(`LLM API 错误 (${response.status})`);
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = "";
+                let contentStarted = false;
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop() || "";
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (!trimmed || !trimmed.startsWith("data: ")) continue;
+                        const jsonStr = trimmed.slice(6);
+                        if (jsonStr === "[DONE]") {
+                            console.log("[LLM] 流式完成");
+                            toast.info("✅ LLM 回复完成", 2000);
+                            return;
+                        }
+                        try {
+                            const parsed = JSON.parse(jsonStr);
+                            const delta = parsed.choices?.[0]?.delta?.content;
+                            if (delta) {
+                                if (!contentStarted) {
+                                    contentStarted = true;
+                                    console.log("[LLM] 开始收到文本");
+                                }
+                                yield delta;
+                            }
+                        } catch (e) {}
+                    }
+                }
+                if (buffer.trim()) {
+                    const trimmed = buffer.trim();
+                    if (trimmed.startsWith("data: ") && trimmed.slice(6) !== "[DONE]") {
+                        try {
+                            const delta = JSON.parse(trimmed.slice(6)).choices?.[0]?.delta?.content;
+                            if (delta) yield delta;
+                        } catch (e) {}
+                    }
+                }
+            }
+        }
+
+        class TTSController {
+            async generateSpeech(text, apiBaseUrl, apiKey, model, voice) {
+                const cleanText = text.replace(/\[.*?\]/g, '').trim();
+                console.log(`[TTS] 生成语音: "${cleanText.substring(0, 30)}..."`);
+                toast.info(`🔊 TTS: "${cleanText.substring(0, 20)}..."`, 1500);
+                const body = { model, input: cleanText, voice, response_format: "mp3", speed: 1.0 };
+                const response = await fetch(`${apiBaseUrl}/audio/speech`, {
+                    method: "POST", headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
+                });
+                if (!response.ok) throw new Error(`TTS API 错误 (${response.status})`);
+                const clone = response.clone();
+                const responseText = await clone.text();
+                try {
+                    const json = JSON.parse(responseText);
+                    if (json.output?.audio?.url) return json.output.audio.url;
+                } catch (e) {}
+                return await response.blob();
+            }
+        }
+
+        // ==================== 播放队列调度 ====================
+        class PlaybackQueue {
+            constructor() {
+                this.queue = [];
+                this.isPlaying = false;
+                this._stopped = false;
+                this.onAllComplete = null;
+                this._currentAudio = null;
+                this._nextTimer = null;
+            }
+            enqueue(item) {
+                this.queue.push(item);
+                if (!this.isPlaying && !this._stopped) this._playNext();
+            }
+            async _playNext() {
+                if (this._stopped || this.queue.length === 0) {
+                    this.isPlaying = false;
+                    if (this._stopped && this.queue.length > 0) this.queue = [];
+                    if (this.queue.length === 0 && this.onAllComplete && !this._stopped) {
+                        this.onAllComplete();
+                    }
+                    return;
+                }
+                this.isPlaying = true;
+                const item = this.queue.shift();
+
+                expressionController.setExpression(item.expression);
+
+                let audioSource;
+                try {
+                    audioSource = await item.ttsPromise;
+                } catch (e) {
+                    console.warn("TTS生成失败，跳过一句");
+                    this._playNext();
+                    return;
+                }
+                if (this._stopped) { this.isPlaying = false; return; }
+
+                let audio;
+                if (typeof audioSource === 'string') {
+                    audio = new Audio(audioSource);
+                } else {
+                    const audioUrl = URL.createObjectURL(audioSource);
+                    audio = new Audio(audioUrl);
+                    audio.addEventListener('ended', () => URL.revokeObjectURL(audioUrl), { once: true });
+                }
+                this._currentAudio = audio;
+
+                if (item.animFile && animationController.hasAction(item.animFile)) {
+                    animationController.playAction(item.animFile, 0.3);
+                } else {
+                    animationController.returnToIdle(0.3);
+                }
+
+                audio.play().catch(e => console.warn("音频播放失败:", e));
+
+                const handleAudioEnded = () => {
+                    if (this._stopped) return;
+                    if (this.queue.length > 0) {
+                        this._nextTimer = setTimeout(() => {
+                            this._nextTimer = null;
+                            this._currentAudio = null;
+                            this._playNext();
+                        }, 200);
+                    } else {
+                        this._currentAudio = null;
+                        this.isPlaying = false;
+                        if (this.onAllComplete && !this._stopped) this.onAllComplete();
+                    }
+                };
+                audio.onended = handleAudioEnded;
+                audio.onerror = handleAudioEnded;
+            }
+            stop() {
+                this._stopped = true;
+                if (this._currentAudio) { try { this._currentAudio.pause(); this._currentAudio = null; } catch (e) {} }
+                if (this._nextTimer) { clearTimeout(this._nextTimer); this._nextTimer = null; }
+                this.queue = [];
+                this.isPlaying = false;
+                animationController.returnToIdle(0.3);
+                expressionController.resetToDefault();
+                console.log("[播放队列] 已停止");
+                toast.info("⏹️ 播放队列停止", 1500);
+            }
+            reset() {
+                this._stopped = false;
+                this.queue = [];
+                this.isPlaying = false;
+                this._currentAudio = null;
+                if (this._nextTimer) { clearTimeout(this._nextTimer); this._nextTimer = null; }
+                console.log("[播放队列] 已重置");
+            }
+            getQueueLength() { return this.queue.length + (this.isPlaying ? 1 : 0); }
+        }
+
+        // ==================== 行解析 ====================
+        function parseLine(line) {
+            const trimmed = line.trim();
+            if (!trimmed) return null;
+            let actionTag = null;
+            let exprTag = null;
+            let remaining = trimmed;
+            const tagRegex = /^\[([^\]]+)\]\s*/;
+            while (true) {
+                const match = remaining.match(tagRegex);
+                if (!match) break;
+                const tag = match[1].toLowerCase();
+                if (VALID_ACTION_TAGS.has(tag)) { if (!actionTag) actionTag = tag; }
+                else if (VALID_EXPR_TAGS.has(tag)) { if (!exprTag) exprTag = tag; }
+                else break;
+                remaining = remaining.slice(match[0].length);
+            }
+            const text = remaining.trim();
+            if (!text && !actionTag && !exprTag) return null;
+            return {
+                action: actionTag || null,
+                expression: exprTag ? EXPR_TAG_MAP[exprTag] : DEFAULT_EXPR,
+                animFile: (actionTag && actionTag !== "waiting") ? (ACTION_TAG_MAP[actionTag] || null) : null,
+                text: text || "",
+            };
+        }
+
+        // ==================== AI 控制器 ====================
+        class AIController {
+            constructor() {
+                this.state = "idle";
+                this.vadController = new VADController();
+                this.whisperController = new WhisperController();
+                this.llmController = new LLMController();
+                this.ttsController = new TTSController();
+                this.playbackQueue = new PlaybackQueue();
+                this.conversationHistory = [];
+                this._abortFlag = false;
+                this._llmBuffer = "";
+                this._vadPausedForPlayback = false;
+                this._isProcessing = false;
+                this._bindEvents();
+            }
+
+            _bindEvents() {
+                this.vadController.onSpeechEnd = async (wavBlob) => {
+                    if (this._isProcessing) return;
+                    this._isProcessing = true;
+                    await this._handleSpeechEnd(wavBlob);
+                };
+                this.vadController.onSilenceTimeout = async () => {
+                    if (this._isProcessing || this._vadPausedForPlayback) return;
+                    this._isProcessing = true;
+                    await this._handleSilenceTimeout();
+                };
+                this.playbackQueue.onAllComplete = () => {
+                    this._onPlaybackComplete();
+                };
+            }
+
+            async start() {
+                if (this.state === "running") return;
+                if (!currentVRM) { toast.warn("请先加载 VRM 模型"); return; }
+                const apiKey = apiKeyInput.value.trim();
+                if (!apiKey) { toast.warn("请先在 API 设置中填写 API Key"); return; }
+
+                this._abortFlag = false;
+                this._isProcessing = false;
+                this.playbackQueue.reset();
+                this.conversationHistory = [];
+                this._vadPausedForPlayback = false;
+                try {
+                    await this.vadController.start();
+                    this.state = "running";
+                    this._updateUI();
+                    animationController.returnToIdle(0.3);
+                    toast.success("AI 模式已启动，开始监听...");
+                    console.log("[AI] 模式启动");
+                } catch (e) {
+                    this.state = "idle";
+                    this._updateUI();
+                }
+            }
+
+            async stop() {
+                if (this.state === "idle") return;
+                this.state = "stopping";
+                this._updateUI();
+                this._abortFlag = true;
+                this.playbackQueue.stop();
+                await this.vadController.stop();
+                this._vadPausedForPlayback = false;
+                this._isProcessing = false;
+                animationController.returnToIdle(0.3);
+                expressionController.resetToDefault();
+                this.state = "idle";
+                this._updateUI();
+                toast.info("AI 模式已停止");
+                console.log("[AI] 模式停止");
+            }
+
+            _addToHistory(role, content) {
+                this.conversationHistory.push({ role, content });
+                if (this.conversationHistory.length > 6) this.conversationHistory = this.conversationHistory.slice(-6);
+            }
+
+            async _consumeStream(messages, apiBaseUrl, apiKey, llmModel, ttsModel, ttsVoice) {
+                this._llmBuffer = "";
+                let fullAiText = "";
+                const streamGen = this.llmController.streamChat(messages, apiBaseUrl, apiKey, llmModel);
+
+                const flushLine = (line) => {
+                    const parsed = parseLine(line);
+                    if (!parsed || !parsed.text) return;
+                    fullAiText += (fullAiText ? " " : "") + parsed.text;
+                    if (this.playbackQueue.getQueueLength() === 0 && !this._vadPausedForPlayback) {
+                        this.vadController.pause();
+                        this._vadPausedForPlayback = true;
+                    }
+                    const ttsPromise = this.ttsController
+                        .generateSpeech(parsed.text, apiBaseUrl, apiKey, ttsModel, ttsVoice)
+                        .catch(e => { throw e; });
+                    this.playbackQueue.enqueue({ animFile: parsed.animFile, expression: parsed.expression, text: parsed.text, ttsPromise });
+                };
+
+                for await (const delta of streamGen) {
+                    if (this._abortFlag) break;
+                    this._llmBuffer += delta;
+                    const lines = this._llmBuffer.split("\n");
+                    this._llmBuffer = lines.pop() || "";
+                    for (const line of lines) {
+                        if (this._abortFlag) break;
+                        flushLine(line);
+                    }
+                }
+                if (!this._abortFlag && this._llmBuffer.trim()) flushLine(this._llmBuffer);
+                return fullAiText;
+            }
+
+            async _handleSpeechEnd(wavBlob) {
+                const apiKey = apiKeyInput.value.trim();
+                const apiBaseUrl = apiBaseUrlInput.value.trim() || "https://run.v3.cm/v1";
+                const llmModel = llmModelInput.value.trim() || "gemini-2.5-flash";
+                const ttsModel = ttsModelInput.value.trim() || "qwen-tts";
+                const ttsVoice = ttsVoiceInput.value.trim() || "Cherry";
+
+                try {
+                    const userText = await this.whisperController.transcribe(wavBlob, apiBaseUrl, apiKey);
+                    if (!userText || !userText.trim()) { this._isProcessing = false; return; }
+
+                    const systemPrompt = `你是用户温柔的猫娘女友。一次回复最多四句话。每句话单独占一行。
+动作标签：${[...VALID_ACTION_TAGS].map(t => `[${t}]`).join(' ')}
+表情标签：${[...VALID_EXPR_TAGS].map(t => `[${t}]`).join(' ')}
+规则：每句首必须包含一个动作标签和一个表情标签，未指定默认[relax]`;
+
+                    const messages = [
+                        { role: "system", content: systemPrompt },
+                        ...this.conversationHistory.slice(-6),
+                        { role: "user", content: userText },
+                    ];
+
+                    const fullAiText = await this._consumeStream(messages, apiBaseUrl, apiKey, llmModel, ttsModel, ttsVoice);
+
+                    if (fullAiText.trim()) {
+                        this._addToHistory("user", userText);
+                        this._addToHistory("assistant", fullAiText.trim());
+                    }
+                } catch (e) {
+                    if (!this._abortFlag) {
+                        toast.error("处理出错: " + (e.message || "未知错误"));
+                        this._onPlaybackComplete();
+                    }
+                }
+            }
+
+            async _handleSilenceTimeout() {
+                const apiKey = apiKeyInput.value.trim();
+                const apiBaseUrl = apiBaseUrlInput.value.trim() || "https://run.v3.cm/v1";
+                const llmModel = llmModelInput.value.trim() || "gemini-2.5-flash";
+                const ttsModel = ttsModelInput.value.trim() || "qwen-tts";
+                const ttsVoice = ttsVoiceInput.value.trim() || "Cherry";
+
+                try {
+                    const systemPrompt = `你是用户温柔的猫娘女友。用户已沉默，请主动关心或撒娇。一次回复最多两句话。每句话单独占一行。包含动作标签和表情标签。`;
+                    const messages = [
+                        { role: "system", content: systemPrompt },
+                        ...this.conversationHistory.slice(-6),
+                        { role: "user", content: "用户当前处于沉默状态。" },
+                    ];
+
+                    const fullAiText = await this._consumeStream(messages, apiBaseUrl, apiKey, llmModel, ttsModel, ttsVoice);
+
+                    if (fullAiText.trim()) {
+                        this._addToHistory("user", "用户当前处于沉默状态。");
+                        this._addToHistory("assistant", fullAiText.trim());
+                    }
+                } catch (e) {
+                    if (!this._abortFlag) this._onPlaybackComplete();
+                }
+            }
+
+            _onPlaybackComplete() {
+                if (this._abortFlag || this.state !== "running") return;
+                this.vadController.resume();
+                this._vadPausedForPlayback = false;
+                this._isProcessing = false;
+                animationController.returnToIdle(0.4);
+                expressionController.resetToDefault();
+                console.log("[AI] 播放完成，恢复监听");
+                toast.info("✅ 回复完成，继续监听", 2000);
+            }
+
+            _updateUI() {
+                const dot = document.getElementById("aiStatusDot");
+                const text = document.getElementById("aiStatusText");
+                const btnStart = document.getElementById("btnStartAI");
+                const btnStop = document.getElementById("btnStopAI");
+                const info = document.getElementById("aiInfo");
+
+                dot.classList.remove("idle", "running", "stopped");
+                switch (this.state) {
+                    case "idle":
+                        dot.classList.add("idle");
+                        text.textContent = "未启动";
+                        btnStart.disabled = false;
+                        btnStop.disabled = true;
+                        info.style.display = "none";
+                        break;
+                    case "running":
+                        dot.classList.add("running");
+                        text.textContent = "AI模式运行中";
+                        btnStart.disabled = true;
+                        btnStop.disabled = false;
+                        info.style.display = "block";
+                        info.textContent = "🎤 正在监听... 请对角色说话";
+                        break;
+                    case "stopping":
+                        dot.classList.add("stopped");
+                        text.textContent = "正在停止...";
+                        btnStart.disabled = true;
+                        btnStop.disabled = true;
+                        info.style.display = "block";
+                        info.textContent = "⏳ 正在清理资源...";
+                        break;
+                }
+            }
+        }
+
+        const aiController = new AIController();
+
+        document.getElementById("btnStartAI").addEventListener("click", async () => {
+            if (aiController.state === "running") return;
+            try { await aiController.start(); }
+            catch (e) { aiController.state = "idle"; aiController._updateUI(); }
+        });
+
+        document.getElementById("btnStopAI").addEventListener("click", async () => {
+            await aiController.stop();
+        });
+
+        window.addEventListener("beforeunload", () => {
+            if (aiController.state === "running") aiController.stop();
+        });
+
+        console.log("🚀 重构完成 · 单一动画控制器 + waiting.vrma 常驻基础层，权重恒满，杜绝 T-Pose 与骨骼争夺");
 
     </script>
-
 </body>
 
 </html>
