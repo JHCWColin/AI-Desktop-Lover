@@ -1535,46 +1535,60 @@
         `;
 
         // ==================== SileroVADController ====================
+        // ==================== SileroVADController（修复版） ====================
         class SileroVADController {
             constructor() {
                 this.session = null;
                 this.ready = false;
+
+                // 动态探测的输入/输出名称
                 this.audioInputName = null;
                 this.srInputName = null;
-                this.stateInputName = null;
+                this.stateInputName = null;   // 合并的 state 输入名
                 this.hInputName = null;
                 this.cInputName = null;
-                this.probOutputName = null;
+                this.probOutputName = null;   // 语音概率输出名
                 this.stateOutputName = null;
                 this.hOutputName = null;
                 this.cOutputName = null;
+
+                // 状态模式：'state'（单一 state 张量）或 'hc'（h/c 分离）
                 this.stateMode = "state";
+
+                // 状态张量形状
                 this.stateShape = [2, 1, 128];
                 this.hShape = [2, 1, 64];
                 this.cShape = [2, 1, 64];
-                this.srShape = [1];
+                this.srShape = [1];           // 采样率张量形状（标量或 [1]）
+
+                // 当前状态张量
                 this.state = null;
                 this.h = null;
                 this.c = null;
             }
 
+            // ---------- 初始化 ----------
             async init(url) {
                 this.session = await ort.InferenceSession.create(url, {
                     executionProviders: ["wasm"],
                     graphOptimizationLevel: "all",
                 });
-                console.log("[VAD] inputs:", this.session.inputNames);
-                console.log("[VAD] outputs:", this.session.outputNames);
+                console.log("[VAD] 模型输入:", this.session.inputNames);
+                console.log("[VAD] 模型输出:", this.session.outputNames);
+
                 this._detectIO();
                 this._detectStateShape();
                 this.reset();
+
                 await this._warmup();
                 this.ready = true;
             }
 
+            // ---------- 自动探测输入/输出名 ----------
             _detectIO() {
                 const ins = this.session.inputNames || [];
                 const outs = this.session.outputNames || [];
+
                 const pick = (names, patterns, exclude = []) => {
                     for (const p of patterns) {
                         const hit = names.find(n => p.test(n) && !exclude.some(e => e.test(n)));
@@ -1582,40 +1596,53 @@
                     }
                     return null;
                 };
+
+                // 音频输入
                 this.audioInputName = pick(ins, [/^input$/i, /^x$/i, /audio/i, /speech/i, /input/i], [/sr/i, /sample/i, /state/i, /^h$/i, /^c$/i, /^hn$/i, /^cn$/i])
                     || ins.find(n => !/sr|sample|state|^h$|^c$|^hn$|^cn$/i.test(n))
                     || ins[0];
+
+                // 采样率
                 this.srInputName = pick(ins, [/^sr$/i, /sample_?rate/i, /(^|_)sr($|_)/i, /sr/i]);
+
+                // 状态
                 this.stateInputName = pick(ins, [/^state$/i, /state/i, /^h$/i, /^c$/i, /^hn$/i, /^cn$/i]);
                 this.hInputName = pick(ins, [/^h$/i, /^hn$/i, /hidden/i]);
                 this.cInputName = pick(ins, [/^c$/i, /^cn$/i, /cell/i]);
+
                 if (!this.stateInputName && this.hInputName && this.cInputName) {
                     this.stateMode = "hc";
                 } else {
                     this.stateMode = "state";
                 }
+
+                // 输出：语音概率
                 this.probOutputName = pick(outs, [/^output$/i, /prob/i, /speech/i, /output/i]) || outs[0];
                 this.stateOutputName = pick(outs, [/^stateN$/i, /state/i, /^hn$/i, /^cn$/i]);
                 this.hOutputName = pick(outs, [/^hn$/i, /^h$/i, /hidden/i]);
                 this.cOutputName = pick(outs, [/^cn$/i, /^c$/i, /cell/i]);
+
+                // 防止 prob 和 state 同名冲突
                 if (this.probOutputName && this.probOutputName === this.stateOutputName) {
                     const alt = outs.find(n => n !== this.stateOutputName);
                     if (alt) this.probOutputName = alt;
                 }
-                console.log("[VAD] resolved IO:", {
-                    audioInputName: this.audioInputName,
-                    srInputName: this.srInputName,
-                    stateMode: this.stateMode,
-                    stateInputName: this.stateInputName,
-                    hInputName: this.hInputName,
-                    cInputName: this.cInputName,
-                    probOutputName: this.probOutputName,
-                    stateOutputName: this.stateOutputName,
-                    hOutputName: this.hOutputName,
-                    cOutputName: this.cOutputName,
+
+                console.log("[VAD] IO 解析结果:", {
+                    audio: this.audioInputName,
+                    sr: this.srInputName,
+                    mode: this.stateMode,
+                    stateIn: this.stateInputName,
+                    hIn: this.hInputName,
+                    cIn: this.cInputName,
+                    probOut: this.probOutputName,
+                    stateOut: this.stateOutputName,
+                    hOut: this.hOutputName,
+                    cOut: this.cOutputName,
                 });
             }
 
+            // ---------- 从元数据读取张量形状 ----------
             _readMetaShape(name) {
                 if (!name) return null;
                 try {
@@ -1643,15 +1670,18 @@
                 if (this.stateMode === "hc") {
                     this.hShape = this._fillShape(this._readMetaShape(this.hInputName), [2, 1, 64]);
                     this.cShape = this._fillShape(this._readMetaShape(this.cInputName), [2, 1, 64]);
-                    console.log("[VAD] h shape:", this.hShape, "c shape:", this.cShape);
+                    console.log("[VAD] h 形状:", this.hShape, "c 形状:", this.cShape);
                 } else {
                     this.stateShape = this._fillShape(this._readMetaShape(this.stateInputName), [2, 1, 128]);
-                    console.log("[VAD] state shape:", this.stateShape);
+                    console.log("[VAD] state 形状:", this.stateShape);
                 }
             }
 
-            _sizeOf(shape) { return shape.reduce((a, b) => a * b, 1); }
+            _sizeOf(shape) {
+                return shape.reduce((a, b) => a * b, 1);
+            }
 
+            // ---------- 重置状态 ----------
             reset() {
                 if (this.stateMode === "hc") {
                     this.h = new ort.Tensor("float32", new Float32Array(this._sizeOf(this.hShape)), this.hShape.slice());
@@ -1659,17 +1689,31 @@
                 } else {
                     this.state = new ort.Tensor("float32", new Float32Array(this._sizeOf(this.stateShape)), this.stateShape.slice());
                 }
+                console.log("[VAD] 状态已重置");
             }
 
+            // ---------- 构建采样率张量 ----------
             _makeSrTensor() {
-                return new ort.Tensor("int64", BigInt64Array.from([16000n]), this.srShape.slice());
+                // 采样率固定为 16000 (int64)
+                if (this.srShape.length === 0) {
+                    // 标量
+                    return new ort.Tensor("int64", BigInt64Array.from([16000n]), []);
+                } else {
+                    return new ort.Tensor("int64", BigInt64Array.from([16000n]), this.srShape.slice());
+                }
             }
 
+            // ---------- 构建一次推理的 feeds ----------
             _buildFeeds(frame) {
+                // ★ 重要：VAD 模型输入应为 [-1, 1] 的浮点音频，无需额外缩放
                 const audio = new ort.Tensor("float32", frame, [1, frame.length]);
                 const feeds = {};
                 feeds[this.audioInputName] = audio;
-                if (this.srInputName) feeds[this.srInputName] = this._makeSrTensor();
+
+                if (this.srInputName) {
+                    feeds[this.srInputName] = this._makeSrTensor();
+                }
+
                 if (this.stateMode === "hc") {
                     if (this.hInputName) feeds[this.hInputName] = this.h;
                     if (this.cInputName) feeds[this.cInputName] = this.c;
@@ -1679,6 +1723,7 @@
                 return feeds;
             }
 
+            // ---------- 从结果更新状态 ----------
             _updateStateFromResults(results) {
                 if (this.stateMode === "hc") {
                     if (this.hOutputName && results[this.hOutputName]) this.h = results[this.hOutputName];
@@ -1695,22 +1740,27 @@
                 }
             }
 
+            // ---------- 提取语音概率 ----------
             _extractProb(results) {
                 let probTensor = results[this.probOutputName];
                 if (!probTensor) probTensor = results[this.session.outputNames[0]];
                 const d = probTensor.data;
+                // 通常概率位于最后一个元素
                 return d[d.length - 1];
             }
 
+            // ---------- 单次推理 ----------
             async _runOnce(frame) {
                 const feeds = this._buildFeeds(frame);
                 return await this.session.run(feeds);
             }
 
+            // ---------- Warmup（自检采样率形状） ----------
             async _warmup() {
-                const silence = new Float32Array(512);
+                const silence = new Float32Array(512);  // 静音
                 const sine = new Float32Array(512);
                 for (let i = 0; i < 512; i++) sine[i] = 0.3 * Math.sin(2 * Math.PI * 440 * i / 16000);
+
                 const trySr = async (shape) => {
                     this.srShape = shape;
                     this.reset();
@@ -1719,21 +1769,24 @@
                     this._updateStateFromResults(r);
                     return p;
                 };
+
                 let silenceProb;
                 try {
-                    silenceProb = await trySr([1]);
-                    console.log("[VAD] sr tensor shape = [1] OK");
+                    silenceProb = await trySr([1]);  // 大多数情况 sr 是 [1] 的形状
+                    console.log("[VAD] sr 张量形状 = [1] 测试通过");
                 } catch (e1) {
-                    console.warn("[VAD] sr shape [1] 失败，回退 scalar []：", e1?.message || e1);
+                    console.warn("[VAD] sr 形状 [1] 失败，尝试标量 []：", e1?.message || e1);
                     try {
                         silenceProb = await trySr([]);
-                        console.log("[VAD] sr tensor shape = [] (scalar) OK");
+                        console.log("[VAD] sr 张量形状 = [] (标量) 测试通过");
                     } catch (e2) {
-                        console.error("[VAD] warmup 失败", { error: e2, inputNames: this.session.inputNames, outputNames: this.session.outputNames });
+                        console.error("[VAD] warmup 彻底失败", { error: e2, inputNames: this.session.inputNames, outputNames: this.session.outputNames });
                         throw new Error("VAD warmup 失败: " + (e2?.message || e2));
                     }
                 }
-                console.log("[VAD] warmup silence prob:", silenceProb);
+                console.log("[VAD] warmup 静音 prob =", silenceProb);
+
+                // 正弦波测试
                 let sineProb;
                 try {
                     const r2 = await this._runOnce(sine.slice());
@@ -1743,10 +1796,14 @@
                     console.error("[VAD] warmup 正弦波失败", e);
                     throw new Error("VAD warmup(sine) 失败: " + (e?.message || e));
                 }
-                console.log("[VAD] warmup sine prob:", sineProb);
+                console.log("[VAD] warmup 正弦波 prob =", sineProb);
+
+                // 最终重置状态
                 this.reset();
+                console.log("[VAD] warmup 完成，状态已重置");
             }
 
+            // ---------- 处理单个音频帧 ----------
             async process(frame) {
                 const results = await this._runOnce(frame);
                 const prob = this._extractProb(results);
@@ -1754,7 +1811,6 @@
                 return prob;
             }
         }
-
         // ==================== SenseVoice 特征前端 ====================
         const FBANK_CFG = {
             sampleRate: 16000,
@@ -1913,59 +1969,106 @@
         }
 
         // ==================== SenseVoiceASRController ====================
+        // ==================== SenseVoiceASRController（修复版） ====================
         class SenseVoiceASRController {
             constructor() {
                 this.session = null;
                 this.fbank = null;
-                this.idToToken = null;
-                this.negMean = null;
-                this.invStd = null;
-                this.blankId = 0;
+                this.idToToken = null;      // id → token 字符串
+                this.negMean = null;        // CMVN 负均值
+                this.invStd = null;         // CMVN 逆标准差
+                this.blankId = 0;           // CTC blank token id
                 this.ready = false;
-                this._intType = "int32";
-                this.inFeat = null;
-                this.inLen = null;
-                this.inLang = null;
-                this.inTn = null;
-                this.outName = null;
+
+                // 输入/输出名称缓存
+                this.inFeat = null;         // 语音特征输入名
+                this.inLen = null;          // 特征长度输入名
+                this.inLang = null;         // 语言 ID 输入名
+                this.inTn = null;           // textnorm 输入名
+                this.outName = null;        // 输出 logits 名
+
+                // int64 / int32 自动适配状态
+                this._intType = "int32";    // 默认先试 int32，失败切换 int64
             }
+
+            // ---------- 初始化 ----------
             async init(modelUrl, tokensUrl, cmvnUrl) {
+                // 1. 特征提取器
                 this.fbank = new FbankExtractor(FBANK_CFG);
+
+                // 2. 加载 tokens.txt
                 const tokResp = await fetch(tokensUrl);
                 if (!tokResp.ok) throw new Error(`tokens.txt 加载失败 (${tokResp.status})`);
                 this._parseTokens(await tokResp.text());
+
+                // 3. 加载 CMVN (am.mvn)
                 const mvnResp = await fetch(cmvnUrl);
                 if (!mvnResp.ok) throw new Error(`am.mvn 加载失败 (${mvnResp.status})`);
                 this._parseCmvn(await mvnResp.text());
-                const expectDim = FBANK_CFG.numMel * LFR_M;
+
+                const expectDim = FBANK_CFG.numMel * LFR_M;   // 80 * 7 = 560
                 if (this.negMean && this.negMean.length !== expectDim) {
-                    console.warn(`[ASR] CMVN 维度=${this.negMean.length}，期望=${expectDim}`);
+                    console.warn(`[ASR] CMVN 维度=${this.negMean.length}，期望=${expectDim}，请检查 Fbank/LFR 参数`);
                 }
+
+                // 4. 创建 ONNX 推理会话
                 this.session = await ort.InferenceSession.create(modelUrl, {
                     executionProviders: ["wasm"],
                     graphOptimizationLevel: "all",
                 });
+
+                // 5. 探测输入/输出名称
                 this._detectIO();
+
                 this.ready = true;
                 console.log("[ASR] 输入:", this.session.inputNames, "输出:", this.session.outputNames);
+                console.log("[ASR] 映射 → feat:", this.inFeat, "len:", this.inLen, "lang:", this.inLang, "tn:", this.inTn, "out:", this.outName);
             }
+
+            // ---------- 解析 tokens ----------
             _parseTokens(text) {
                 const lines = text.split(/\r?\n/);
                 const pairs = [];
                 let maxId = 0;
-                for (const line of lines) {
-                    if (!line) continue;
-                    const idx = line.lastIndexOf(" ");
-                    if (idx < 0) continue;
-                    const sym = line.slice(0, idx);
-                    const id = parseInt(line.slice(idx + 1), 10);
-                    if (Number.isNaN(id)) continue;
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (!line || line.startsWith("#")) continue; // 跳过空行与注释
+                    let sym, id;
+                    // 优先尝试“最后空格分割”的格式 (token id)
+                    const idx = Math.max(line.lastIndexOf(" "), line.lastIndexOf("\t"));
+                    if (idx > 0) {
+                        const maybeId = parseInt(line.slice(idx + 1).trim(), 10);
+                        if (!Number.isNaN(maybeId)) {
+                            sym = line.slice(0, idx).trim();
+                            id = maybeId;
+                        } else {
+                            // 没有数字 ID，则行号作为 ID
+                            sym = line;
+                            id = pairs.length; // 自增 ID
+                        }
+                    } else {
+                        // 没有空格，整行即为 token，ID 自动递增
+                        sym = line;
+                        id = pairs.length;
+                    }
                     pairs.push([id, sym]);
                     if (id > maxId) maxId = id;
                 }
+                console.log(`[ASR] 成功解析 ${pairs.length} 个 token，最大 ID=${maxId}`);
+                if (pairs.length > 0) {
+                    console.log(`[ASR] token 示例: ${pairs.slice(0, 5).map(([id, tok]) => `${tok}(${id})`).join(", ")}`);
+                } else {
+                    console.error("[ASR] tokens.txt 解析结果为空！请检查文件格式");
+                }
                 this.idToToken = new Array(maxId + 1).fill("");
-                for (const [id, sym] of pairs) this.idToToken[id] = sym;
+                for (const [id, sym] of pairs) {
+                    this.idToToken[id] = sym;
+                }
+                // 通常 blank 是 ID 0 或第一个 token，这里假设 blank_id = 0
+                this.blankId = 0;
+                console.log(`[ASR] blank_id 设为 ${this.blankId}（可手动调整）`);
             }
+            // ---------- 解析 CMVN ----------
             _parseCmvn(text) {
                 const toks = text.split(/\s+/).filter(Boolean);
                 let collecting = null;
@@ -1989,128 +2092,215 @@
                 }
                 this.negMean = mean;
                 this.invStd = std;
-                if (!mean || !std) console.warn("[ASR] am.mvn 解析未得到完整 CMVN");
+                if (mean && std) {
+                    console.log(`[ASR] CMVN 加载成功，mean 长度=${mean.length}，std 长度=${std.length}`);
+                } else {
+                    console.warn("[ASR] am.mvn 解析未得到完整 CMVN，跳过归一化");
+                }
             }
+
+            // ---------- 探测模型输入/输出名称 ----------
             _detectIO() {
                 const ins = this.session.inputNames;
+                const outs = this.session.outputNames;
+
+                // 长度、语言、textnorm 等辅助输入
                 this.inLen = ins.find(n => /len/i.test(n)) || null;
                 this.inLang = ins.find(n => /lang/i.test(n)) || null;
                 this.inTn = ins.find(n => /(norm|itn)/i.test(n)) || null;
-                this.inFeat = ins.find(n => /(speech|feat|input|^x$)/i.test(n) && !/(len|lang|norm|itn)/i.test(n))
-                    || ins.find(n => n !== this.inLen && n !== this.inLang && n !== this.inTn)
-                    || ins[0];
-                const outs = this.session.outputNames;
+
+                // 主特征输入
+                this.inFeat = ins.find(n =>
+                    /(speech|feat|input|^x$)/i.test(n) &&
+                    !/(len|lang|norm|itn)/i.test(n)
+                ) || ins.find(n =>
+                    n !== this.inLen && n !== this.inLang && n !== this.inTn
+                ) || ins[0];
+
+                // 输出（CTC logits）
                 this.outName = outs.find(n => /(logit|ctc)/i.test(n)) || outs[0];
+
+                console.log("[ASR] IO 映射结果:", {
+                    feat: this.inFeat,
+                    len: this.inLen,
+                    lang: this.inLang,
+                    tn: this.inTn,
+                    out: this.outName
+                });
             }
+
+            // ---------- CMVN 应用到 LFR 特征 ----------
             applyCMVN(frames) {
                 const nm = this.negMean, isd = this.invStd;
                 if (!nm || !isd) return;
                 for (const f of frames) {
                     const n = Math.min(f.length, nm.length);
-                    for (let i = 0; i < n; i++) f[i] = (f[i] + nm[i]) * isd[i];
+                    for (let i = 0; i < n; i++) {
+                        f[i] = (f[i] + nm[i]) * isd[i];
+                    }
                 }
             }
-            // 替换 SenseVoiceASRController 中的 recognize 方法
-async recognize(samples16k) {
-    if (!this.ready) return "";
-    if (!samples16k || samples16k.length < this.fbank.cfg.frameLength) return "";
 
-    // 【全新严格修复】：深拷贝并放大到 16-bit PCM 的绝对浮点振幅
-    const scaledSamples = new Float32Array(samples16k.length);
-    let maxVal = 0;
-    for (let i = 0; i < samples16k.length; i++) {
-        scaledSamples[i] = samples16k[i] * 32768.0;
-        if (Math.abs(samples16k[i]) > maxVal) maxVal = Math.abs(samples16k[i]);
-    }
-    
-    // 💡 打印一个临时的 Debug 确认：确保不是传入的原始音频本身就是全零
-    console.log(`[ASR Debug] 原始音频样本数: ${samples16k.length}, 原始最大振幅: ${maxVal.toFixed(4)}, 放大后最大振幅: ${(maxVal * 32768).toFixed(1)}`);
+            // ---------- 核心识别方法（修复版） ----------
+            async recognize(samples16k) {
+                if (!this.ready) return "";
+                if (!samples16k || samples16k.length < this.fbank.cfg.frameLength) return "";
 
-    // 确保传入的是缩放后的数组
-    const feats = this.fbank.compute(scaledSamples); 
-    
-    if (!feats.length) return "";
-    const lfr = applyLFR(feats, LFR_M, LFR_N);
-    this.applyCMVN(lfr);
-    const T = lfr.length;
-    const dim = lfr[0].length;
-    const flat = new Float32Array(T * dim);
-    for (let i = 0; i < T; i++) flat.set(lfr[i], i * dim);
-    const logits = await this._run(flat, T, dim);
-    if (!logits) return "";
-    return this._ctcDecode(logits);
-}
+                // ★ 修复1：必须将 [-1,1] 浮点音频放大为 PCM 16-bit 范围（乘以 32768）
+                const scaledSamples = new Float32Array(samples16k.length);
+                let origMax = 0, scaledMax = 0;
+                for (let i = 0; i < samples16k.length; i++) {
+                    if (Math.abs(samples16k[i]) > origMax) origMax = Math.abs(samples16k[i]);
+                    scaledSamples[i] = samples16k[i] * 32768.0;
+                    if (Math.abs(scaledSamples[i]) > scaledMax) scaledMax = Math.abs(scaledSamples[i]);
+                }
+                console.log(`[ASR Debug] 样本数=${samples16k.length}, 原始最大振幅=${origMax.toFixed(4)}, 放大后最大振幅=${scaledMax.toFixed(1)}`);
+
+                // 提取 Fbank
+                const feats = this.fbank.compute(scaledSamples);
+                if (!feats.length) return "";
+
+                // LFR 拼接
+                const lfr = applyLFR(feats, LFR_M, LFR_N);
+                // CMVN
+                this.applyCMVN(lfr);
+
+                const T = lfr.length;
+                const dim = lfr[0].length;
+                const flat = new Float32Array(T * dim);
+                for (let i = 0; i < T; i++) flat.set(lfr[i], i * dim);
+
+                console.log(`[ASR Debug] LFR frames=${T}, dim=${dim}`);
+
+                // ONNX 推理
+                const logits = await this._run(flat, T, dim);
+                if (!logits) return "";
+
+                // CTC 解码
+                const text = this._ctcDecode(logits);
+                console.log(`[ASR] final text: "${text}"`);
+                return text;
+            }
+
+            // ---------- ONNX 推理（修复版） ----------
             async _run(flat, T, dim) {
+                // 语音特征张量 [1, T, dim]
                 const featTensor = new ort.Tensor("float32", flat, [1, T, dim]);
+
+                // 根据探测到的 int 类型构建辅助标量张量
+                const mkScalar = (val) => {
+                    if (this._intType === "int64") {
+                        return new ort.Tensor("int64", BigInt64Array.from([BigInt(val)]), [1]);
+                    } else {
+                        return new ort.Tensor("int32", Int32Array.from([val]), [1]);
+                    }
+                };
+
                 const tryRun = async (intType) => {
-                    const mk = (val) => intType === "int64"
-                        ? new ort.Tensor("int64", BigInt64Array.from([BigInt(val)]), [1])
-                        : new ort.Tensor("int32", Int32Array.from([val]), [1]);
+                    this._intType = intType;
                     const feeds = {};
                     feeds[this.inFeat] = featTensor;
-                    if (this.inLen) feeds[this.inLen] = mk(T);
-                    if (this.inLang) feeds[this.inLang] = mk(SENSEVOICE_LANGUAGE);
-                    if (this.inTn) feeds[this.inTn] = mk(SENSEVOICE_TEXTNORM);
-                    const out = await this.session.run(feeds);
-                    return out[this.outName] || out[this.session.outputNames[0]];
+
+                    if (this.inLen) feeds[this.inLen] = mkScalar(T);
+                    if (this.inLang) feeds[this.inLang] = mkScalar(SENSEVOICE_LANGUAGE);
+                    if (this.inTn) feeds[this.inTn] = mkScalar(SENSEVOICE_TEXTNORM);
+
+                    console.log(`[ASR _run] 使用 int 类型: ${intType}, 输入:`, Object.keys(feeds).map(k => `${k}[${feeds[k].type} ${feeds[k].dims}]`));
+
+                    const output = await this.session.run(feeds);
+                    const logits = output[this.outName] || output[this.session.outputNames[0]];
+
+                    // ★ Debug：打印 logits 统计信息
+                    const data = logits.data;
+                    let maxVal = -Infinity, minVal = Infinity, sum = 0;
+                    for (let i = 0; i < data.length; i++) {
+                        const v = data[i];
+                        if (v > maxVal) maxVal = v;
+                        if (v < minVal) minVal = v;
+                        sum += v;
+                    }
+                    console.log(`[ASR logits] shape: [${logits.dims}], min: ${minVal.toFixed(3)}, max: ${maxVal.toFixed(3)}, mean: ${(sum / data.length).toFixed(4)}`);
+                    return logits;
                 };
-                try { return await tryRun(this._intType); }
-                catch (e) {
+
+                // 先尝试当前 _intType，失败切换另一种
+                try {
+                    return await tryRun(this._intType);
+                } catch (e) {
+                    console.warn(`[ASR] int 类型 ${this._intType} 推理失败，尝试切换`, e);
                     const alt = this._intType === "int32" ? "int64" : "int32";
-                    try { const r = await tryRun(alt); this._intType = alt; return r; }
-                    catch (e2) { console.error("[ASR] 推理失败:", e2); return null; }
+                    try {
+                        return await tryRun(alt);
+                    } catch (e2) {
+                        console.error("[ASR] 推理完全失败:", e2);
+                        return null;
+                    }
                 }
             }
+
+            // ---------- CTC 贪婪解码（修复版） ----------
             _ctcDecode(logits) {
+                // logits 形状: [1, T, V] 或 [T, V]
                 const dims = logits.dims;
+                // 兼容不同维度顺序
+                let T, V;
+                if (dims.length === 3) {
+                    T = dims[1];
+                    V = dims[2];
+                } else if (dims.length === 2) {
+                    T = dims[0];
+                    V = dims[1];
+                } else {
+                    console.error("[ASR Decoder] 无法识别的 logits 维度:", dims);
+                    return "";
+                }
                 const data = logits.data;
 
-                // ✅ 修复点：dimensions → dims + 正确索引
-                const T = dims[dims.length - 2] || dims[1];
-                const V = dims[dims.length - 1] || dims[2];
+                console.log(`[ASR Decoder] logits 维度 T=${T}, V=${V}, blank_id=${this.blankId}`);
 
                 let prev = -1;
                 const ids = [];
 
                 for (let t = 0; t < T; t++) {
                     const base = t * V;
-
-                    let best = 0;
-                    let bv = data[base];
-
+                    // 找最大概率索引
+                    let bestId = 0;
+                    let bestVal = data[base];
                     for (let v = 1; v < V; v++) {
                         const val = data[base + v];
-                        if (val > bv) {
-                            bv = val;
-                            best = v;
+                        if (val > bestVal) {
+                            bestVal = val;
+                            bestId = v;
                         }
                     }
-
-                    if (best !== this.blankId && best !== prev) {
-                        ids.push(best);
+                    // 去除连续重复和 blank
+                    if (bestId !== this.blankId && bestId !== prev) {
+                        ids.push(bestId);
                     }
-
-                    prev = best;
+                    prev = bestId;
                 }
 
-                let pieces = ids.map(id => this.idToToken[id] ?? "");
+                console.log("[ASR Decoder] 原始最佳预测 ID 序列:", ids);
 
+                // 映射为 token 字符串，并过滤特殊标记
+                let pieces = ids.map(id => this.idToToken[id] ?? "");
+                console.log("[ASR Decoder] 原始 token 序列:", pieces);
+
+                // 过滤掉特殊控制 token（如 <|…|> 和 <…>）
                 pieces = pieces.filter(p =>
                     p &&
                     !(p.startsWith("<|") && p.endsWith("|>")) &&
                     !(p.startsWith("<") && p.endsWith(">"))
                 );
 
+                // 拼接，并处理 ▁ 代表空格
                 let text = pieces.join("");
+                text = text.replace(/▁/g, " ").replace(/\s+/g, " ").trim();
 
-                text = text.replace(/▁/g, " ")
-                    .replace(/\s+/g, " ")
-                    .trim();
-
+                console.log("[ASR Decoder] 最终解码文本:", text);
                 return text;
             }
         }
-
         // ==================== AudioWorkletRecorder ====================
         class AudioWorkletRecorder {
             constructor() {
@@ -2427,7 +2617,7 @@ async recognize(samples16k) {
                 this.endThreshold = 0.25;
                 this.startFrames = 2;
                 this.startFramesDuringTTS = 6;
-                this.endpointFrames = 28;
+                this.endpointFrames = 20;
                 this.preRollFrames = 12;
                 this.partialIntervalFrames = 9;
                 this.maxSpeechFrames = Math.floor(30000 / 32);
