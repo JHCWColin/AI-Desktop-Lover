@@ -1,0 +1,2402 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VRM AI 聊天模式 · 本地语音交互 (SenseVoice ONNX)</title>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --panel-bg: rgba(20, 20, 40, 0.9);
+            --text: #e0e0e0;
+            --accent: #5b9bd5;
+            --accent-active: #7ab8f5;
+            --border: rgba(255, 255, 255, 0.12);
+            --btn-bg: rgba(255, 255, 255, 0.08);
+            --btn-hover: rgba(255, 255, 255, 0.18);
+            --preset-active: #3a6fc5;
+            --preset-hover: #4a80d8;
+            --shadow: 0 6px 28px rgba(0, 0, 0, 0.6);
+            --radius: 12px;
+            --transition: 0.2s ease;
+            --danger: #e0556a;
+            --danger-hover: #f07080;
+            --success: #4caf84;
+            --toast-bg: rgba(30, 30, 55, 0.95);
+            --toast-error: #e0556a;
+            --toast-warn: #f0a040;
+            --toast-info: #5b9bd5;
+            --toast-success: #4caf84;
+        }
+
+        html, body {
+            margin: 0; width: 100%; height: 100%; overflow: hidden;
+            background: #0d0d14;
+            font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        #toastContainer {
+            position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 9999;
+            display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+            max-width: 90vw; width: 420px;
+        }
+
+        .toast {
+            pointer-events: auto; background: var(--toast-bg);
+            border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; padding: 12px 16px;
+            color: #fff; font-size: 13px; font-weight: 500;
+            backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            animation: toastSlideIn 0.35s cubic-bezier(0.22,0.61,0.36,1);
+            display: flex; align-items: center; gap: 10px; transition: all 0.3s ease; position: relative;
+        }
+        .toast.removing { animation: toastSlideOut 0.3s cubic-bezier(0.55,0.06,0.68,0.19) forwards; }
+        .toast.error { border-left: 4px solid var(--toast-error); }
+        .toast.warn { border-left: 4px solid var(--toast-warn); }
+        .toast.info { border-left: 4px solid var(--toast-info); }
+        .toast.success { border-left: 4px solid var(--toast-success); }
+        .toast-icon { flex-shrink: 0; font-size: 18px; }
+        .toast-msg { flex: 1; line-height: 1.4; word-break: break-word; }
+        .toast-close {
+            flex-shrink: 0; cursor: pointer; opacity: 0.6; font-size: 16px;
+            padding: 2px 6px; border-radius: 4px; transition: opacity 0.2s;
+            background: none; border: none; color: #fff;
+        }
+        .toast-close:hover { opacity: 1; background: rgba(255,255,255,0.1); }
+
+        @keyframes toastSlideIn {
+            from { opacity: 0; transform: translateY(-30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes toastSlideOut {
+            from { opacity: 1; transform: translateY(0); }
+            to { opacity: 0; transform: translateY(-20px); }
+        }
+
+        #ui {
+            position: absolute; top: 16px; left: 16px; z-index: 10;
+            background: var(--panel-bg); padding: 16px 18px; border-radius: var(--radius);
+            color: var(--text); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+            border: 1px solid var(--border); box-shadow: var(--shadow);
+            min-width: 290px; max-width: 390px; user-select: none;
+            display: flex; flex-direction: column; gap: 12px;
+            max-height: calc(100vh - 32px); overflow-y: auto; transition: all 0.3s ease;
+        }
+        #ui.collapsed {
+            min-width: auto; max-width: 48px; padding: 8px; border-radius: 50%;
+            overflow: hidden; max-height: 48px; gap: 0;
+        }
+        #ui.collapsed > *:not(.ui-minimize-btn) { display: none; }
+
+        .ui-minimize-btn {
+            position: absolute; top: 6px; right: 8px; width: 28px; height: 28px;
+            background: var(--btn-bg); border: 1px solid var(--border); border-radius: 6px;
+            color: var(--text); font-size: 16px; font-weight: bold; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: background var(--transition); z-index: 11; line-height: 1;
+        }
+        #ui.collapsed .ui-minimize-btn { position: static; margin: 0 auto; }
+        .ui-minimize-btn:hover { background: var(--btn-hover); }
+
+        .ui-section { display: flex; flex-direction: column; gap: 5px; }
+        .ui-label {
+            font-size: 11px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.07em; color: #aaa; margin-bottom: 1px;
+        }
+        .ui-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+        input[type="file"] {
+            color: #ccc; font-size: 12px; max-width: 200px; cursor: pointer;
+        }
+        input[type="file"]::file-selector-button {
+            background: var(--btn-bg); border: 1px solid var(--border);
+            border-radius: 5px; color: var(--text); padding: 5px 12px;
+            cursor: pointer; font-size: 12px; transition: background var(--transition);
+        }
+        input[type="file"]::file-selector-button:hover { background: var(--btn-hover); }
+
+        input[type="text"], input[type="password"], input[type="number"], select {
+            background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 5px;
+            color: var(--text); padding: 6px 10px; font-size: 12px; width: 100%;
+            box-sizing: border-box; outline: none; transition: border-color var(--transition);
+        }
+        input[type="text"]:focus, input[type="password"]:focus,
+        input[type="number"]:focus, select:focus { border-color: var(--accent); }
+
+        button {
+            background: var(--btn-bg); border: 1px solid var(--border); border-radius: 6px;
+            color: var(--text); padding: 8px 14px; cursor: pointer; font-size: 13px;
+            font-weight: 500; transition: all var(--transition); white-space: nowrap;
+            letter-spacing: 0.02em;
+        }
+        button:hover { background: var(--btn-hover); border-color: rgba(255,255,255,0.3); }
+        button:disabled { opacity: 0.4; pointer-events: none; filter: grayscale(0.3); }
+        button.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+        button.btn-primary:hover { background: var(--accent-active); border-color: var(--accent-active); }
+        button.btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; }
+        button.btn-danger:hover { background: var(--danger-hover); border-color: var(--danger-hover); }
+
+        .ai-status {
+            display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500;
+            padding: 8px 12px; border-radius: 8px; background: rgba(0,0,0,0.25);
+        }
+        .ai-status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .ai-status-dot.idle { background: #666; }
+        .ai-status-dot.loading { background: #f0c040; box-shadow: 0 0 8px rgba(240,192,64,0.6); animation: pulse-y 1.2s infinite; }
+        .ai-status-dot.ready { background: #4caf50; box-shadow: 0 0 8px rgba(76,175,80,0.6); }
+        .ai-status-dot.running { background: #4caf50; box-shadow: 0 0 8px rgba(76,175,80,0.6); animation: pulse 1.2s infinite; }
+        .ai-status-dot.stopped { background: #f0a040; }
+        .ai-status-dot.error { background: #e0556a; box-shadow: 0 0 8px rgba(224,85,106,0.6); }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 6px rgba(76,175,80,0.5); }
+            50% { box-shadow: 0 0 18px rgba(76,175,80,0.9); }
+        }
+        @keyframes pulse-y {
+            0%, 100% { box-shadow: 0 0 6px rgba(240,192,64,0.5); }
+            50% { box-shadow: 0 0 18px rgba(240,192,64,0.9); }
+        }
+
+        .collapsible-header {
+            cursor: pointer; display: flex; align-items: center; gap: 6px;
+            font-size: 11px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.07em; color: #aaa; padding: 4px 0; user-select: none;
+        }
+        .collapsible-header:hover { color: #ccc; }
+        .collapsible-arrow { transition: transform 0.25s ease; font-size: 10px; }
+        .collapsible-arrow.open { transform: rotate(90deg); }
+        .collapsible-content { overflow: hidden; max-height: 0; transition: max-height 0.35s ease; }
+        .collapsible-content.open { max-height: 400px; }
+
+        .anim-grid, .expr-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 4px;
+        }
+        .anim-btn, .expr-btn {
+            background: var(--btn-bg); border: 1px solid var(--border); border-radius: 6px;
+            color: var(--text); padding: 7px 3px; font-size: 11px; font-weight: 500;
+            cursor: pointer; transition: all var(--transition); text-align: center;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .anim-btn:hover:not(:disabled), .expr-btn:hover:not(:disabled) {
+            background: var(--btn-hover); border-color: rgba(255,255,255,0.4);
+            transform: translateY(-1px);
+        }
+        .anim-btn.active-anim, .expr-btn.active-expr {
+            background: var(--preset-active); border-color: #6a9ee6; color: white;
+            box-shadow: 0 0 10px rgba(58,111,197,0.45); font-weight: 600;
+        }
+        .preset-group {
+            display: flex; gap: 3px; background: rgba(0,0,0,0.35);
+            border-radius: 7px; padding: 3px;
+        }
+        .preset-btn {
+            flex: 1; border: none; background: transparent; color: #999;
+            padding: 6px 7px; border-radius: 5px; cursor: pointer;
+            font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+            transition: all var(--transition);
+        }
+        .preset-btn:hover { color: #ddd; background: rgba(255,255,255,0.06); }
+        .preset-btn.active { background: var(--preset-active); color: #fff; box-shadow: 0 2px 8px rgba(58,111,197,0.4); }
+
+        .status-dot {
+            display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+            margin-right: 4px; vertical-align: middle; position: relative; top: -1px;
+        }
+        .status-dot.on { background: #4caf50; box-shadow: 0 0 6px rgba(76,175,80,0.5); }
+        .status-dot.off { background: #666; }
+
+        .info-text { font-size: 10px; color: #888; margin-top: 1px; line-height: 1.4; }
+        .loading-text { color: #f0c040; font-size: 11px; font-weight: 500; }
+        .fps-display { font-size: 11px; color: #aaa; margin-left: auto; }
+
+        #subtitleBar {
+            position: fixed; left: 50%; bottom: 36px; transform: translateX(-50%);
+            z-index: 50; width: auto; max-width: 80vw; display: none;
+            flex-direction: column; gap: 8px; align-items: center; pointer-events: none;
+        }
+        #subtitleBar.show { display: flex; }
+        .subtitle-line {
+            background: rgba(0,0,0,0.58); backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px); border: 1px solid var(--border);
+            border-radius: 14px; padding: 10px 20px; color: #fff;
+            font-size: 19px; line-height: 1.5; text-align: center;
+            max-width: 80vw; word-break: break-word;
+            box-shadow: 0 4px 22px rgba(0,0,0,0.55); transition: opacity 0.2s ease;
+        }
+        .subtitle-label {
+            font-size: 11px; color: #8fb8e0; letter-spacing: 0.1em;
+            margin-right: 8px; vertical-align: middle; text-transform: uppercase;
+        }
+        .subtitle-user.partial { color: #cfe6ff; }
+        .subtitle-user.final { color: #fff; font-weight: 600; }
+        .subtitle-ai { background: rgba(45,32,64,0.6); color: #f4ecff; font-size: 17px; }
+
+        @media (max-width: 480px) {
+            #ui {
+                top: 6px; left: 6px; padding: 10px 12px; gap: 8px;
+                min-width: auto; max-width: calc(100vw - 24px);
+                max-height: calc(100vh - 20px); font-size: 11px;
+            }
+            .anim-btn, .expr-btn { padding: 5px 2px; font-size: 10px; }
+            .preset-btn { padding: 5px 5px; font-size: 10px; }
+            #toastContainer { width: calc(100vw - 20px); top: 8px; }
+            .toast { font-size: 11px; padding: 10px 12px; }
+            .subtitle-line { font-size: 15px; padding: 8px 14px; }
+            #subtitleBar { bottom: 18px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="toastContainer"></div>
+
+    <div id="subtitleBar">
+        <div class="subtitle-line subtitle-user" id="subtitleUser"></div>
+        <div class="subtitle-line subtitle-ai" id="subtitleAI" style="display:none;"></div>
+    </div>
+
+    <div id="ui">
+        <div class="ui-minimize-btn" title="最小化/展开">_</div>
+
+        <div class="ui-section">
+            <span class="ui-label">📦 VRM 模型</span>
+            <input id="vrmInput" type="file" accept=".vrm">
+        </div>
+
+        <div class="ui-section">
+            <div class="collapsible-header" id="apiSettingsHeader">
+                <span class="collapsible-arrow" id="apiArrow">▶</span> ⚙️ API 设置 (仅 LLM / TTS)
+            </div>
+            <div class="collapsible-content" id="apiSettingsContent">
+                <div style="display:flex;flex-direction:column;gap:6px;padding-top:4px;">
+                    <input type="text" id="apiBaseUrl" placeholder="https://run.v3.cm/v1">
+                    <input type="password" id="apiKey" placeholder="sk-...">
+                    <input type="text" id="llmModel" placeholder="gemini-2.5-flash">
+                    <input type="text" id="ttsModel" placeholder="qwen-tts">
+                    <input type="text" id="ttsVoice" placeholder="Cherry">
+                    <span class="info-text">语音识别（ASR）已完全本地化，无需云端</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="ui-section">
+            <span class="ui-label">🤖 AI 语音模式</span>
+            <div class="ai-status" id="modelStatus" style="margin-bottom:2px;">
+                <span class="ai-status-dot idle" id="modelStatusDot"></span>
+                <span id="modelStatusText">ASR 模型未加载</span>
+            </div>
+            <div class="ai-status" id="aiStatus">
+                <span class="ai-status-dot idle" id="aiStatusDot"></span>
+                <span id="aiStatusText">未启动</span>
+            </div>
+            <div class="ui-row">
+                <button class="btn-primary" id="btnStartAI" disabled>▶ 开始AI模式</button>
+                <button class="btn-danger" id="btnStopAI" disabled>⏹ 结束AI模式</button>
+            </div>
+            <span class="info-text" id="aiInfo" style="display:none;"></span>
+        </div>
+
+        <div class="ui-section">
+            <span class="ui-label">😊 表情</span>
+            <div id="exprButtonContainer" class="expr-grid">
+                <span class="info-text" style="grid-column:1/-1;">请先加载模型</span>
+            </div>
+        </div>
+
+        <div class="ui-section">
+            <span class="ui-label">🎬 动画</span>
+            <div id="animButtonContainer" class="anim-grid">
+                <span class="info-text" style="grid-column:1/-1;">请先加载 VRM 模型</span>
+            </div>
+            <span class="info-text" id="animStatus" style="display:none;"></span>
+        </div>
+
+        <div class="ui-section">
+            <span class="ui-label">🎨 渲染精细度</span>
+            <div class="preset-group" id="presetGroup">
+                <button class="preset-btn" data-preset="low">低</button>
+                <button class="preset-btn" data-preset="medium">标准</button>
+                <button class="preset-btn active" data-preset="high">高</button>
+                <button class="preset-btn" data-preset="ultra">极致</button>
+            </div>
+            <span class="info-text" id="presetInfo"></span>
+
+            <div class="collapsible-header" id="advancedGraphicsHeader" style="margin-top:4px;">
+                <span class="collapsible-arrow" id="advancedGraphicsArrow">▶</span> 高级画质设置
+            </div>
+            <div class="collapsible-content" id="advancedGraphicsContent">
+                <div style="display:flex;flex-direction:column;gap:6px;padding-top:4px;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <label style="font-size:11px;min-width:60px;">渲染倍率</label>
+                        <input type="range" id="renderScale" min="0.5" max="2.0" step="0.1" value="1.0" style="flex:1;">
+                        <span id="renderScaleValue" style="font-size:11px;width:35px;">1.0</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <label style="font-size:11px;min-width:60px;">抗锯齿</label>
+                        <input type="checkbox" id="advancedAA" checked>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <label style="font-size:11px;min-width:60px;">阴影</label>
+                        <input type="checkbox" id="advancedShadows" checked>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <label style="font-size:11px;min-width:60px;">阴影分辨率</label>
+                        <select id="advancedShadowRes">
+                            <option value="512">512</option>
+                            <option value="1024">1024</option>
+                            <option value="2048" selected>2048</option>
+                            <option value="4096">4096</option>
+                        </select>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <label style="font-size:11px;min-width:60px;">阴影类型</label>
+                        <select id="advancedShadowType">
+                            <option value="PCF">PCF (硬)</option>
+                            <option value="PCFSoft" selected>PCF Soft (软)</option>
+                        </select>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <label style="font-size:11px;min-width:60px;">像素比</label>
+                        <input type="number" id="advancedPixelRatio" min="0.5" max="2.0" step="0.1" value="1.0" style="width:70px;">
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-size:11px;">当前帧率: </span>
+                        <span id="fpsCounter" style="font-size:11px;color:#4caf50;">-- FPS</span>
+                    </div>
+                    <button id="applyAdvancedSettings" class="btn-primary" style="margin-top:4px;">应用高级设置</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ONNX Runtime Web (本地推理引擎)。离线部署时改为本地路径 -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+                "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3/lib/three-vrm.module.min.js",
+                "@pixiv/three-vrm-animation": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm-animation@3/lib/three-vrm-animation.module.min.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from "three";
+        import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+        import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+        import { VRMLoaderPlugin } from "@pixiv/three-vrm";
+        import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from "@pixiv/three-vrm-animation";
+
+        const ort = window.ort;
+
+        // ==================== 本地 ASR / VAD 资源路径 ====================
+        const ASR_MODEL_URL = "./model_quant.onnx";
+        const ASR_TOKENS_URL = "./tokens.txt";
+        const ASR_CMVN_URL = "./am.mvn";
+        const VAD_MODEL_URL = "./silero_vad.onnx";
+        const ORT_WASM_PATH = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
+
+        const SENSEVOICE_LANGUAGE = 0;
+        const SENSEVOICE_TEXTNORM = 15;
+
+        // ==================== 常量 ====================
+        const IDLE_FILE = "waiting.vrma";
+        const INTRO_FILE = "appearing.vrma";
+
+        const ANIMATION_FILES = [
+            { file: "waiting.vrma", label: "待机" },
+            { file: "appearing.vrma", label: "出现" },
+            { file: "greet.vrma", label: "打招呼" },
+            { file: "liked.vrma", label: "点赞" },
+            { file: "pose.vrma", label: "摆姿势" },
+            { file: "shoot.vrma", label: "射击" },
+            { file: "showbody.vrma", label: "展示" },
+            { file: "spin.vrma", label: "旋转" },
+            { file: "squat.vrma", label: "蹲下" },
+            { file: "yeah.vrma", label: "耶✌" },
+        ];
+
+        const EXPRESSION_PRESETS = [
+            { name: "happy", label: "😊 微笑", defaultWeight: 1.0 },
+            { name: "angry", label: "😡 生气", defaultWeight: 1.0 },
+            { name: "sad", label: "😢 悲伤", defaultWeight: 1.0 },
+            { name: "surprised", label: "😲 惊讶", defaultWeight: 1.0 },
+            { name: "relaxed", label: "😌 放松", defaultWeight: 1.0 },
+            { name: "shy", label: "😳 害羞", defaultWeight: 1.0 },
+            { name: "fun", label: "😜 嬉皮", defaultWeight: 1.0 },
+            { name: "love", label: "😍 喜爱", defaultWeight: 1.0 },
+            { name: "serious", label: "😐 严肃", defaultWeight: 1.0 },
+            { name: "neutral", label: "😶 无表情", defaultWeight: 1.0 },
+        ];
+
+        const ACTION_TAG_MAP = {
+            waiting: "waiting.vrma",
+            yeah: "yeah.vrma",
+            squat: "squat.vrma",
+            spin: "spin.vrma",
+            showbody: "showbody.vrma",
+            shoot: "shoot.vrma",
+            pose: "pose.vrma",
+            liked: "liked.vrma",
+            greet: "greet.vrma",
+        };
+        const VALID_ACTION_TAGS = new Set(Object.keys(ACTION_TAG_MAP));
+
+        const EXPR_TAG_MAP = {
+            smile: "happy",
+            happy: "happy",
+            angry: "angry",
+            sad: "sad",
+            surprise: "surprised",
+            relax: "relaxed",
+            shy: "shy",
+            love: "love",
+            none: "neutral",
+        };
+        const VALID_EXPR_TAGS = new Set(Object.keys(EXPR_TAG_MAP));
+        const DEFAULT_EXPR = "relaxed";
+
+        const QUALITY_PRESETS = {
+            low: { label: "低", pixelRatio: 0.5, antialias: false, shadows: false, shadowMapSize: 512, shadowMapType: THREE.PCFShadowMap },
+            medium: { label: "标准", pixelRatio: 1.0, antialias: false, shadows: false, shadowMapSize: 1024, shadowMapType: THREE.PCFShadowMap },
+            high: { label: "高", pixelRatio: 1.0, antialias: true, shadows: true, shadowMapSize: 2048, shadowMapType: THREE.PCFShadowMap },
+            ultra: { label: "极致", pixelRatio: 2.0, antialias: true, shadows: true, shadowMapSize: 4096, shadowMapType: THREE.PCFSoftShadowMap },
+        };
+        let currentPreset = "high";
+        const preset = () => QUALITY_PRESETS[currentPreset];
+
+        // ==================== ToastController ====================
+        class ToastController {
+            constructor() { this.container = document.getElementById("toastContainer"); }
+            _createToast(type, message, duration = 3500) {
+                const icons = { error: "❌", warn: "⚠️", info: "ℹ️", success: "✅" };
+                const toast = document.createElement("div");
+                toast.className = `toast ${type}`;
+                toast.innerHTML = `<span class="toast-icon">${icons[type] || "ℹ️"}</span><span class="toast-msg">${message}</span><button class="toast-close" title="关闭">×</button>`;
+                const closeBtn = toast.querySelector(".toast-close");
+                const remove = () => {
+                    if (toast.parentNode && !toast.classList.contains("removing")) {
+                        toast.classList.add("removing");
+                        setTimeout(() => { if (toast.parentNode) toast.remove(); }, 300);
+                    }
+                };
+                closeBtn.addEventListener("click", remove);
+                toast._timer = setTimeout(remove, duration);
+                toast._remove = remove;
+                this.container.appendChild(toast);
+                const allToasts = this.container.querySelectorAll(".toast");
+                if (allToasts.length > 5) {
+                    const oldest = allToasts[0];
+                    if (oldest._remove) oldest._remove();
+                }
+                return toast;
+            }
+            error(msg, duration) { return this._createToast("error", msg, duration); }
+            warn(msg, duration) { return this._createToast("warn", msg, duration); }
+            info(msg, duration) { return this._createToast("info", msg, duration); }
+            success(msg, duration) { return this._createToast("success", msg, duration); }
+        }
+        const toast = new ToastController();
+
+        // ==================== 场景初始化 ====================
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x222222);
+        const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 1.4, 3);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+        directionalLight.position.set(1, 1.5, 1);
+        scene.add(directionalLight);
+
+        function configureLightShadows(light, presetKeyOrCfg) {
+            const cfg = typeof presetKeyOrCfg === 'string' ? QUALITY_PRESETS[presetKeyOrCfg] : presetKeyOrCfg;
+            light.castShadow = cfg.shadows;
+            if (cfg.shadows) {
+                light.shadow.mapSize.width = cfg.shadowMapSize;
+                light.shadow.mapSize.height = cfg.shadowMapSize;
+                light.shadow.camera.left = -2;
+                light.shadow.camera.right = 2;
+                light.shadow.camera.top = 3;
+                light.shadow.camera.bottom = -0.5;
+                light.shadow.camera.near = 0.1;
+                light.shadow.camera.far = 15;
+                light.shadow.bias = -0.0003;
+                light.shadow.normalBias = 0.02;
+            }
+        }
+        configureLightShadows(directionalLight, currentPreset);
+
+        const groundGeometry = new THREE.CircleGeometry(2.5, 48);
+        const groundMaterial = new THREE.ShadowMaterial({ opacity: 0.45 });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = 0.001;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        let renderer = new THREE.WebGLRenderer({ antialias: preset().antialias, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(preset().pixelRatio, window.devicePixelRatio));
+        renderer.shadowMap.enabled = preset().shadows;
+        renderer.shadowMap.type = preset().shadowMapType;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        document.body.appendChild(renderer.domElement);
+
+        let controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 1.0, 0);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+        controls.minDistance = 0.8;
+        controls.maxDistance = 8;
+        controls.maxPolarAngle = Math.PI * 0.75;
+        controls.update();
+
+        const clock = new THREE.Clock();
+        let currentVRM = null;
+        let isLoadingAnimations = false;
+        let currentExpression = null;
+        let blinkState = { timer: 0, nextBlink: 2.5, isBlinking: false, blinkDuration: 0.1, blinkProgress: 0 };
+
+        let fpsFrames = 0;
+        let fpsTime = 0;
+        let currentFPS = 0;
+
+        // ==================== ExpressionController ====================
+        class ExpressionController {
+            setExpression(expressionName) {
+                if (!currentVRM || !currentVRM.expressionManager) return;
+                const manager = currentVRM.expressionManager;
+                Object.keys(manager._expressionMap || {}).forEach(name => {
+                    if (name !== "blink") manager.setValue(name, 0);
+                });
+                if (expressionName && manager.getExpression(expressionName)) manager.setValue(expressionName, 1);
+                currentExpression = expressionName;
+                this._updateUI();
+            }
+            resetToDefault() { this.setExpression(DEFAULT_EXPR); }
+            _updateUI() {
+                document.querySelectorAll(".expr-btn").forEach(btn => {
+                    btn.classList.toggle("active-expr", btn.title === currentExpression);
+                });
+            }
+        }
+        const expressionController = new ExpressionController();
+
+        function buildExpressionButtons() {
+            const container = document.getElementById("exprButtonContainer");
+            container.innerHTML = "";
+            EXPRESSION_PRESETS.forEach(expr => {
+                const btn = document.createElement("button");
+                btn.className = "expr-btn";
+                btn.textContent = expr.label;
+                btn.title = expr.name;
+                btn.addEventListener("click", () => expressionController.setExpression(expr.name));
+                container.appendChild(btn);
+            });
+            expressionController._updateUI();
+        }
+
+        // ==================== 动画控制器 ====================
+        const AnimState = { IDLE: "IDLE", PLAYING: "PLAYING", TRANSITIONING: "TRANSITIONING" };
+
+        class AnimationController {
+            constructor() {
+                this.mixer = null;
+                this.actions = new Map();
+                this.currentAction = null;
+                this.currentFile = null;
+                this.state = AnimState.IDLE;
+                this._isIdle = true;
+                this._transTimer = 0;
+                this._transTarget = AnimState.IDLE;
+                this._onFinishedBound = this._onFinished.bind(this);
+            }
+            setup(vrm) {
+                if (this.mixer) {
+                    this.mixer.removeEventListener("finished", this._onFinishedBound);
+                    this.mixer.stopAllAction();
+                }
+                this.actions.clear();
+                this.currentAction = null;
+                this.currentFile = null;
+                this.state = AnimState.IDLE;
+                this._isIdle = true;
+                this._transTimer = 0;
+                this.mixer = new THREE.AnimationMixer(vrm.scene);
+                this.mixer.addEventListener("finished", this._onFinishedBound);
+                this._updateActiveButton(null);
+            }
+            registerClip(fileName, clip) {
+                if (!this.mixer) return;
+                this.actions.set(fileName, this.mixer.clipAction(clip));
+            }
+            hasAction(fileName) { return this.actions.has(fileName); }
+            playAction(fileName, fade = 0.3) {
+                this._play(fileName, { loop: false, fade, isIdle: false });
+            }
+            returnToIdle(fade = 0.4) {
+                if (!this.actions.has(IDLE_FILE)) return;
+                this._play(IDLE_FILE, { loop: true, fade, isIdle: true });
+            }
+            playIntro(fade = 0) {
+                if (this.actions.has(INTRO_FILE)) {
+                    this._play(INTRO_FILE, { loop: false, fade, isIdle: false });
+                } else {
+                    this.returnToIdle(0);
+                }
+            }
+            _play(fileName, { loop = false, fade = 0.3, isIdle = false } = {}) {
+                if (!this.mixer || !this.actions.has(fileName)) return;
+                const newAction = this.actions.get(fileName);
+                if (newAction === this.currentAction) {
+                    if (loop) return;
+                    newAction.stopFading();
+                    newAction.reset();
+                    newAction.setLoop(THREE.LoopOnce, 1);
+                    newAction.clampWhenFinished = true;
+                    newAction.enabled = true;
+                    newAction.setEffectiveTimeScale(1);
+                    newAction.setEffectiveWeight(1);
+                    newAction.play();
+                    this.state = AnimState.PLAYING;
+                    this._isIdle = false;
+                    return;
+                }
+                for (const action of this.actions.values()) {
+                    if (action === this.currentAction) {
+                        action.stopFading();
+                        action.enabled = true;
+                        action.setEffectiveWeight(1);
+                    } else if (action !== newAction) {
+                        action.stopFading();
+                        action.setEffectiveWeight(0);
+                    }
+                }
+                const oldAction = this.currentAction;
+                newAction.stopFading();
+                newAction.reset();
+                newAction.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
+                newAction.clampWhenFinished = !loop;
+                newAction.enabled = true;
+                newAction.setEffectiveTimeScale(1);
+                newAction.setEffectiveWeight(1);
+                if (oldAction && fade > 0) {
+                    oldAction.fadeOut(fade);
+                    newAction.fadeIn(fade);
+                    newAction.play();
+                    this.state = AnimState.TRANSITIONING;
+                    this._transTimer = fade;
+                    this._transTarget = isIdle ? AnimState.IDLE : AnimState.PLAYING;
+                } else {
+                    newAction.play();
+                    this.state = isIdle ? AnimState.IDLE : AnimState.PLAYING;
+                }
+                this.currentAction = newAction;
+                this.currentFile = fileName;
+                this._isIdle = isIdle;
+                this._updateActiveButton(isIdle ? null : fileName);
+            }
+            update(delta) {
+                if (!this.mixer) return;
+                this.mixer.update(delta);
+                if (this.state === AnimState.TRANSITIONING) {
+                    this._transTimer -= delta;
+                    if (this._transTimer <= 0) {
+                        this.currentAction.stopFading();
+                        this.currentAction.setEffectiveWeight(1);
+                        this.state = this._transTarget;
+                    }
+                }
+            }
+            _onFinished(event) {
+                if (event.action === this.currentAction && !this._isIdle) {
+                    this.returnToIdle(0.4);
+                }
+            }
+            _updateActiveButton(fileName) {
+                document.querySelectorAll(".anim-btn").forEach(btn => {
+                    btn.classList.toggle("active-anim", btn.dataset.file === fileName);
+                });
+            }
+        }
+        const animationController = new AnimationController();
+
+        // ==================== 眨眼 ====================
+        function updateBlink(delta) {
+            if (!currentVRM || !currentVRM.expressionManager) return;
+            blinkState.timer += delta;
+            if (!blinkState.isBlinking) {
+                if (blinkState.timer >= blinkState.nextBlink) {
+                    blinkState.isBlinking = true;
+                    blinkState.blinkProgress = 0;
+                    blinkState.timer = 0;
+                    blinkState.nextBlink = 2.0 + Math.random() * 3.0;
+                }
+            } else {
+                blinkState.blinkProgress += delta / blinkState.blinkDuration;
+                if (blinkState.blinkProgress >= 1.0) {
+                    blinkState.isBlinking = false;
+                    blinkState.blinkProgress = 1.0;
+                }
+            }
+            let blinkWeight = 0;
+            if (blinkState.isBlinking) {
+                const t = blinkState.blinkProgress;
+                blinkWeight = t < 0.3 ? t / 0.3 : 1.0 - (t - 0.3) / 0.7;
+                blinkWeight = Math.max(0, Math.min(1, blinkWeight));
+            }
+            currentVRM.expressionManager.setValue("blink", blinkWeight);
+        }
+
+        // ==================== 渲染循环 ====================
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = Math.min(clock.getDelta(), 0.1);
+            if (currentVRM) {
+                animationController.update(delta);
+                updateBlink(delta);
+                currentVRM.update(delta);
+            }
+            controls.update();
+            renderer.render(scene, camera);
+            fpsFrames++;
+            fpsTime += delta;
+            if (fpsTime >= 0.5) {
+                currentFPS = Math.round(fpsFrames / fpsTime);
+                document.getElementById("fpsCounter").textContent = `${currentFPS} FPS`;
+                fpsFrames = 0;
+                fpsTime = 0;
+            }
+        }
+        animate();
+
+        // ==================== VRM 加载 ====================
+        document.getElementById("vrmInput").addEventListener("change", async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const url = URL.createObjectURL(file);
+            const loader = new GLTFLoader();
+            loader.register((parser) => new VRMLoaderPlugin(parser));
+            loader.load(url, (gltf) => {
+                if (currentVRM) scene.remove(currentVRM.scene);
+                currentVRM = gltf.userData.vrm;
+                scene.add(currentVRM.scene);
+                updateVRMShadowProps();
+                buildExpressionButtons();
+                expressionController.resetToDefault();
+                toast.success("VRM 模型加载成功");
+                preloadAllAnimations(currentVRM);
+            }, undefined, (err) => {
+                toast.error("VRM 加载失败: " + (err.message || "未知错误"));
+            });
+        });
+
+        function updateVRMShadowProps() {
+            if (!currentVRM) return;
+            const enableShadows = renderer.shadowMap.enabled;
+            currentVRM.scene.traverse(child => {
+                if (child.isMesh) {
+                    child.castShadow = enableShadows;
+                    child.receiveShadow = enableShadows;
+                }
+            });
+        }
+
+        async function preloadAllAnimations(vrm) {
+            if (isLoadingAnimations) return;
+            isLoadingAnimations = true;
+            const container = document.getElementById("animButtonContainer");
+            container.innerHTML = '<span class="loading-text" style="grid-column:1/-1;">⏳ 加载动画文件中...</span>';
+            const statusEl = document.getElementById("animStatus");
+            statusEl.style.display = "none";
+            animationController.setup(vrm);
+            const loader = new GLTFLoader();
+            loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
+            const files = [...new Set([IDLE_FILE, ...ANIMATION_FILES.map(f => f.file)])];
+            const total = files.length;
+            let loadedCount = 0;
+            await Promise.all(files.map(file => new Promise((resolve) => {
+                loader.load(
+                    `./${file}`,
+                    (gltf) => {
+                        try {
+                            const vrmaData = gltf.userData.vrmAnimations[0];
+                            const clip = createVRMAnimationClip(vrmaData, vrm);
+                            animationController.registerClip(file, clip);
+                        } catch (err) {
+                            console.warn(`⚠️ 解析失败: ${file}`, err);
+                        }
+                        loadedCount++;
+                        statusEl.style.display = "block";
+                        statusEl.textContent = `⏳ 加载中 ${loadedCount}/${total}`;
+                        resolve();
+                    },
+                    undefined,
+                    (error) => {
+                        console.warn(`⚠️ 加载失败: ${file}`, error);
+                        loadedCount++;
+                        statusEl.textContent = `⚠️ 部分加载失败 (${loadedCount}/${total})`;
+                        resolve();
+                    }
+                );
+            })));
+            buildAnimationButtons();
+            if (!animationController.hasAction(IDLE_FILE)) {
+                toast.warn(`缺少基础待机文件 ${IDLE_FILE}，请将其放在页面同目录`);
+            }
+            animationController.playIntro(0);
+            isLoadingAnimations = false;
+            statusEl.textContent = "✅ 动画就绪";
+            setTimeout(() => { statusEl.style.display = "none"; }, 2000);
+        }
+
+        function buildAnimationButtons() {
+            const container = document.getElementById("animButtonContainer");
+            container.innerHTML = "";
+            ANIMATION_FILES.forEach(item => {
+                const btn = document.createElement("button");
+                btn.className = "anim-btn";
+                btn.textContent = item.label;
+                btn.dataset.file = item.file;
+                btn.title = item.file;
+                btn.addEventListener("click", () => {
+                    if (!animationController.hasAction(item.file)) return;
+                    if (item.file === IDLE_FILE) animationController.returnToIdle(0.4);
+                    else animationController.playAction(item.file, 0.3);
+                });
+                container.appendChild(btn);
+            });
+        }
+
+        // ==================== 画质设置 ====================
+        let useCustomSettings = false;
+        let customCfg = {
+            renderScale: 1.0,
+            antialias: true,
+            shadows: true,
+            shadowMapSize: 2048,
+            shadowMapType: THREE.PCFShadowMap,
+            pixelRatio: 1.0,
+        };
+
+        function rebuildRenderer(antialias) {
+            const oldCanvas = renderer.domElement;
+            const oldTarget = controls.target.clone();
+            controls.dispose();
+            const newRenderer = new THREE.WebGLRenderer({ antialias, powerPreference: "high-performance" });
+            newRenderer.setSize(window.innerWidth, window.innerHeight);
+            newRenderer.setPixelRatio(Math.min(useCustomSettings ? customCfg.pixelRatio : preset().pixelRatio, window.devicePixelRatio));
+            newRenderer.shadowMap.enabled = renderer.shadowMap.enabled;
+            newRenderer.shadowMap.type = renderer.shadowMap.type;
+            newRenderer.outputColorSpace = THREE.SRGBColorSpace;
+            newRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+            newRenderer.toneMappingExposure = 1.0;
+            if (oldCanvas.parentNode) {
+                oldCanvas.parentNode.replaceChild(newRenderer.domElement, oldCanvas);
+            } else {
+                document.body.appendChild(newRenderer.domElement);
+            }
+            renderer = newRenderer;
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.target.copy(oldTarget);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.08;
+            controls.minDistance = 0.8;
+            controls.maxDistance = 8;
+            controls.maxPolarAngle = Math.PI * 0.75;
+            controls.update();
+        }
+
+        function applyPreset(presetKey) {
+            useCustomSettings = false;
+            const cfg = QUALITY_PRESETS[presetKey];
+            const oldCfg = QUALITY_PRESETS[currentPreset];
+            if (cfg.antialias !== oldCfg.antialias) rebuildRenderer(cfg.antialias);
+            renderer.setPixelRatio(Math.min(cfg.pixelRatio, window.devicePixelRatio));
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            const shadowsToggled = cfg.shadows !== oldCfg.shadows;
+            renderer.shadowMap.enabled = cfg.shadows;
+            renderer.shadowMap.type = cfg.shadowMapType;
+            directionalLight.castShadow = cfg.shadows;
+            if (cfg.shadows && shadowsToggled) configureLightShadows(directionalLight, presetKey);
+            ground.receiveShadow = cfg.shadows;
+            updateVRMShadowProps();
+            currentPreset = presetKey;
+            updatePresetUI();
+            syncAdvancedUIFromPreset();
+        }
+
+        function applyCustomSettings() {
+            useCustomSettings = true;
+            const needRebuild = (customCfg.antialias !== renderer.capabilities.isWebGL2 ? false : renderer.getContextAttributes().antialias !== customCfg.antialias);
+            if (needRebuild) rebuildRenderer(customCfg.antialias);
+            renderer.setPixelRatio(Math.min(customCfg.pixelRatio, window.devicePixelRatio));
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            const shadowsToggled = customCfg.shadows !== renderer.shadowMap.enabled;
+            renderer.shadowMap.enabled = customCfg.shadows;
+            renderer.shadowMap.type = customCfg.shadowMapType;
+            directionalLight.castShadow = customCfg.shadows;
+            if (customCfg.shadows && shadowsToggled) configureLightShadows(directionalLight, customCfg);
+            ground.receiveShadow = customCfg.shadows;
+            updateVRMShadowProps();
+            currentPreset = null;
+            updatePresetUI();
+        }
+
+        function syncAdvancedUIFromPreset() {
+            const cfg = QUALITY_PRESETS[currentPreset];
+            document.getElementById("renderScale").value = cfg.pixelRatio;
+            document.getElementById("renderScaleValue").textContent = cfg.pixelRatio.toFixed(1);
+            document.getElementById("advancedAA").checked = cfg.antialias;
+            document.getElementById("advancedShadows").checked = cfg.shadows;
+            document.getElementById("advancedShadowRes").value = cfg.shadowMapSize;
+            document.getElementById("advancedShadowType").value = cfg.shadowMapType === THREE.PCFSoftShadowMap ? "PCFSoft" : "PCF";
+            document.getElementById("advancedPixelRatio").value = cfg.pixelRatio;
+            customCfg = { ...cfg, renderScale: cfg.pixelRatio };
+        }
+
+        function updatePresetUI() {
+            const cfg = useCustomSettings ? customCfg : preset();
+            document.querySelectorAll(".preset-btn").forEach(btn => {
+                btn.classList.toggle("active", !useCustomSettings && btn.dataset.preset === currentPreset);
+            });
+            const infoEl = document.getElementById("presetInfo");
+            const aaDot = cfg.antialias ? '<span class="status-dot on"></span>' : '<span class="status-dot off"></span>';
+            const shDot = cfg.shadows ? '<span class="status-dot on"></span>' : '<span class="status-dot off"></span>';
+            infoEl.innerHTML = `<span class="status-dot on"></span>像素比 ${cfg.pixelRatio.toFixed(1)}× &nbsp;|&nbsp;${aaDot}抗锯齿 &nbsp;|&nbsp;${shDot}阴影`;
+        }
+
+        document.getElementById("presetGroup").addEventListener("click", (e) => {
+            const btn = e.target.closest(".preset-btn");
+            if (!btn) return;
+            const presetKey = btn.dataset.preset;
+            if (presetKey && (presetKey !== currentPreset || useCustomSettings)) {
+                applyPreset(presetKey);
+            }
+        });
+
+        const advHeader = document.getElementById("advancedGraphicsHeader");
+        const advArrow = document.getElementById("advancedGraphicsArrow");
+        const advContent = document.getElementById("advancedGraphicsContent");
+        let advExpanded = false;
+        advHeader.addEventListener("click", () => {
+            advExpanded = !advExpanded;
+            advArrow.classList.toggle("open", advExpanded);
+            advContent.classList.toggle("open", advExpanded);
+        });
+
+        document.getElementById("renderScale").addEventListener("input", (e) => {
+            document.getElementById("renderScaleValue").textContent = parseFloat(e.target.value).toFixed(1);
+        });
+
+        document.getElementById("applyAdvancedSettings").addEventListener("click", () => {
+            customCfg.renderScale = parseFloat(document.getElementById("renderScale").value);
+            customCfg.antialias = document.getElementById("advancedAA").checked;
+            customCfg.shadows = document.getElementById("advancedShadows").checked;
+            customCfg.shadowMapSize = parseInt(document.getElementById("advancedShadowRes").value);
+            customCfg.shadowMapType = document.getElementById("advancedShadowType").value === "PCFSoft" ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+            customCfg.pixelRatio = parseFloat(document.getElementById("advancedPixelRatio").value);
+            applyCustomSettings();
+            toast.info("高级画质设置已应用", 1500);
+        });
+
+        syncAdvancedUIFromPreset();
+        updatePresetUI();
+
+        window.addEventListener("resize", () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // ==================== UI 最小化 ====================
+        const uiPanel = document.getElementById("ui");
+        const minimizeBtn = document.querySelector(".ui-minimize-btn");
+        minimizeBtn.addEventListener("click", () => {
+            uiPanel.classList.toggle("collapsed");
+            minimizeBtn.textContent = uiPanel.classList.contains("collapsed") ? "+" : "_";
+        });
+
+        // ==================== API 设置 ====================
+        const apiBaseUrlInput = document.getElementById("apiBaseUrl");
+        const apiKeyInput = document.getElementById("apiKey");
+        const llmModelInput = document.getElementById("llmModel");
+        const ttsModelInput = document.getElementById("ttsModel");
+        const ttsVoiceInput = document.getElementById("ttsVoice");
+
+        function loadApiSettings() {
+            apiBaseUrlInput.value = localStorage.getItem("ai_api_base_url") || "https://run.v3.cm/v1";
+            apiKeyInput.value = localStorage.getItem("ai_api_key") || "";
+            llmModelInput.value = localStorage.getItem("ai_llm_model") || "gemini-2.5-flash";
+            ttsModelInput.value = localStorage.getItem("ai_tts_model") || "qwen-tts";
+            ttsVoiceInput.value = localStorage.getItem("ai_tts_voice") || "Cherry";
+        }
+        function saveApiSettings() {
+            localStorage.setItem("ai_api_base_url", apiBaseUrlInput.value.trim());
+            localStorage.setItem("ai_api_key", apiKeyInput.value.trim());
+            localStorage.setItem("ai_llm_model", llmModelInput.value.trim());
+            localStorage.setItem("ai_tts_model", ttsModelInput.value.trim());
+            localStorage.setItem("ai_tts_voice", ttsVoiceInput.value.trim());
+        }
+        [apiBaseUrlInput, apiKeyInput, llmModelInput, ttsModelInput, ttsVoiceInput].forEach(el => {
+            el.addEventListener("change", saveApiSettings);
+            el.addEventListener("blur", saveApiSettings);
+        });
+        loadApiSettings();
+
+        const apiHeader = document.getElementById("apiSettingsHeader");
+        const apiArrow = document.getElementById("apiArrow");
+        const apiContent = document.getElementById("apiSettingsContent");
+        let apiExpanded = false;
+        apiHeader.addEventListener("click", () => {
+            apiExpanded = !apiExpanded;
+            apiArrow.classList.toggle("open", apiExpanded);
+            apiContent.classList.toggle("open", apiExpanded);
+        });
+
+        // ==================== 工具函数 ====================
+        function mergeFloat32(chunks) {
+            let len = 0;
+            for (const c of chunks) len += c.length;
+            const out = new Float32Array(len);
+            let off = 0;
+            for (const c of chunks) { out.set(c, off); off += c.length; }
+            return out;
+        }
+
+        function computeRMS(frame) {
+            if (!frame || !frame.length) return 0;
+            let sum = 0;
+            for (let i = 0; i < frame.length; i++) sum += frame[i] * frame[i];
+            return Math.sqrt(sum / frame.length);
+        }
+
+        // ==================== AudioResampler ====================
+        class AudioResampler {
+            constructor(inputRate, outputRate) {
+                this.inputRate = inputRate;
+                this.outputRate = outputRate;
+                this.ratio = inputRate / outputRate;
+                this._prev = 0;
+                this._inputPos = 0;
+            }
+            reset() { this._prev = 0; this._inputPos = 0; }
+            process(input) {
+                const N = input.length;
+                if (N === 0) return new Float32Array(0);
+                if (Math.abs(this.ratio - 1) < 1e-9) return input.slice(0);
+                const out = [];
+                let p = this._inputPos;
+                while (p < N - 1) {
+                    const i = Math.floor(p);
+                    const frac = p - i;
+                    const s0 = i < 0 ? this._prev : input[i];
+                    const s1 = input[i + 1];
+                    out.push(s0 + (s1 - s0) * frac);
+                    p += this.ratio;
+                }
+                this._prev = input[N - 1];
+                this._inputPos = p - N;
+                return Float32Array.from(out);
+            }
+        }
+
+        // ==================== AudioWorklet 代码 ====================
+        const WORKLET_CODE = `
+            class CaptureProcessor extends AudioWorkletProcessor {
+                process(inputs) {
+                    const input = inputs[0];
+                    if (input && input[0] && input[0].length) {
+                        this.port.postMessage(input[0].slice(0));
+                    }
+                    return true;
+                }
+            }
+            registerProcessor('capture-processor', CaptureProcessor);
+        `;
+
+        // ==================== SileroVADController ====================
+        class SileroVADController {
+            constructor() {
+                this.session = null;
+                this.ready = false;
+                this.audioInputName = null;
+                this.srInputName = null;
+                this.stateInputName = null;
+                this.hInputName = null;
+                this.cInputName = null;
+                this.probOutputName = null;
+                this.stateOutputName = null;
+                this.hOutputName = null;
+                this.cOutputName = null;
+                this.stateMode = "state";
+                this.stateShape = [2, 1, 128];
+                this.hShape = [2, 1, 64];
+                this.cShape = [2, 1, 64];
+                this.srShape = [1];
+                this.state = null;
+                this.h = null;
+                this.c = null;
+            }
+
+            async init(url) {
+                this.session = await ort.InferenceSession.create(url, {
+                    executionProviders: ["wasm"],
+                    graphOptimizationLevel: "all",
+                });
+                console.log("[VAD] inputs:", this.session.inputNames);
+                console.log("[VAD] outputs:", this.session.outputNames);
+                this._detectIO();
+                this._detectStateShape();
+                this.reset();
+                await this._warmup();
+                this.ready = true;
+            }
+
+            _detectIO() {
+                const ins = this.session.inputNames || [];
+                const outs = this.session.outputNames || [];
+                const pick = (names, patterns, exclude = []) => {
+                    for (const p of patterns) {
+                        const hit = names.find(n => p.test(n) && !exclude.some(e => e.test(n)));
+                        if (hit) return hit;
+                    }
+                    return null;
+                };
+                this.audioInputName = pick(ins, [/^input$/i, /^x$/i, /audio/i, /speech/i, /input/i], [/sr/i, /sample/i, /state/i, /^h$/i, /^c$/i, /^hn$/i, /^cn$/i])
+                    || ins.find(n => !/sr|sample|state|^h$|^c$|^hn$|^cn$/i.test(n))
+                    || ins[0];
+                this.srInputName = pick(ins, [/^sr$/i, /sample_?rate/i, /(^|_)sr($|_)/i, /sr/i]);
+                this.stateInputName = pick(ins, [/^state$/i, /state/i, /^h$/i, /^c$/i, /^hn$/i, /^cn$/i]);
+                this.hInputName = pick(ins, [/^h$/i, /^hn$/i, /hidden/i]);
+                this.cInputName = pick(ins, [/^c$/i, /^cn$/i, /cell/i]);
+                if (!this.stateInputName && this.hInputName && this.cInputName) {
+                    this.stateMode = "hc";
+                } else {
+                    this.stateMode = "state";
+                }
+                this.probOutputName = pick(outs, [/^output$/i, /prob/i, /speech/i, /output/i]) || outs[0];
+                this.stateOutputName = pick(outs, [/^stateN$/i, /state/i, /^hn$/i, /^cn$/i]);
+                this.hOutputName = pick(outs, [/^hn$/i, /^h$/i, /hidden/i]);
+                this.cOutputName = pick(outs, [/^cn$/i, /^c$/i, /cell/i]);
+                if (this.probOutputName && this.probOutputName === this.stateOutputName) {
+                    const alt = outs.find(n => n !== this.stateOutputName);
+                    if (alt) this.probOutputName = alt;
+                }
+                console.log("[VAD] resolved IO:", {
+                    audioInputName: this.audioInputName,
+                    srInputName: this.srInputName,
+                    stateMode: this.stateMode,
+                    stateInputName: this.stateInputName,
+                    hInputName: this.hInputName,
+                    cInputName: this.cInputName,
+                    probOutputName: this.probOutputName,
+                    stateOutputName: this.stateOutputName,
+                    hOutputName: this.hOutputName,
+                    cOutputName: this.cOutputName,
+                });
+            }
+
+            _readMetaShape(name) {
+                if (!name) return null;
+                try {
+                    const meta = this.session.inputMetadata;
+                    if (!meta) return null;
+                    let m = null;
+                    if (Array.isArray(meta)) m = meta.find(x => x && x.name === name);
+                    else if (meta[name]) m = meta[name];
+                    if (!m) return null;
+                    const dims = m.dimensions || m.shape || m.dims;
+                    if (!dims || !dims.length) return null;
+                    return dims.map(d => {
+                        const v = typeof d === "number" ? d : parseInt(d, 10);
+                        return Number.isFinite(v) && v > 0 ? v : null;
+                    });
+                } catch (e) { return null; }
+            }
+
+            _fillShape(metaShape, fallback) {
+                if (!metaShape) return fallback.slice();
+                return metaShape.map((d, i) => (d ?? (fallback[i] ?? 1)));
+            }
+
+            _detectStateShape() {
+                if (this.stateMode === "hc") {
+                    this.hShape = this._fillShape(this._readMetaShape(this.hInputName), [2, 1, 64]);
+                    this.cShape = this._fillShape(this._readMetaShape(this.cInputName), [2, 1, 64]);
+                    console.log("[VAD] h shape:", this.hShape, "c shape:", this.cShape);
+                } else {
+                    this.stateShape = this._fillShape(this._readMetaShape(this.stateInputName), [2, 1, 128]);
+                    console.log("[VAD] state shape:", this.stateShape);
+                }
+            }
+
+            _sizeOf(shape) { return shape.reduce((a, b) => a * b, 1); }
+
+            reset() {
+                if (this.stateMode === "hc") {
+                    this.h = new ort.Tensor("float32", new Float32Array(this._sizeOf(this.hShape)), this.hShape.slice());
+                    this.c = new ort.Tensor("float32", new Float32Array(this._sizeOf(this.cShape)), this.cShape.slice());
+                } else {
+                    this.state = new ort.Tensor("float32", new Float32Array(this._sizeOf(this.stateShape)), this.stateShape.slice());
+                }
+            }
+
+            _makeSrTensor() {
+                return new ort.Tensor("int64", BigInt64Array.from([16000n]), this.srShape.slice());
+            }
+
+            _buildFeeds(frame) {
+                const audio = new ort.Tensor("float32", frame, [1, frame.length]);
+                const feeds = {};
+                feeds[this.audioInputName] = audio;
+                if (this.srInputName) feeds[this.srInputName] = this._makeSrTensor();
+                if (this.stateMode === "hc") {
+                    if (this.hInputName) feeds[this.hInputName] = this.h;
+                    if (this.cInputName) feeds[this.cInputName] = this.c;
+                } else {
+                    if (this.stateInputName) feeds[this.stateInputName] = this.state;
+                }
+                return feeds;
+            }
+
+            _updateStateFromResults(results) {
+                if (this.stateMode === "hc") {
+                    if (this.hOutputName && results[this.hOutputName]) this.h = results[this.hOutputName];
+                    if (this.cOutputName && results[this.cOutputName]) this.c = results[this.cOutputName];
+                } else {
+                    let st = null;
+                    if (this.stateOutputName && results[this.stateOutputName]) {
+                        st = results[this.stateOutputName];
+                    } else {
+                        const key = this.session.outputNames.find(n => n !== this.probOutputName);
+                        if (key && results[key]) st = results[key];
+                    }
+                    if (st) this.state = st;
+                }
+            }
+
+            _extractProb(results) {
+                let probTensor = results[this.probOutputName];
+                if (!probTensor) probTensor = results[this.session.outputNames[0]];
+                const d = probTensor.data;
+                return d[d.length - 1];
+            }
+
+            async _runOnce(frame) {
+                const feeds = this._buildFeeds(frame);
+                return await this.session.run(feeds);
+            }
+
+            async _warmup() {
+                const silence = new Float32Array(512);
+                const sine = new Float32Array(512);
+                for (let i = 0; i < 512; i++) sine[i] = 0.3 * Math.sin(2 * Math.PI * 440 * i / 16000);
+                const trySr = async (shape) => {
+                    this.srShape = shape;
+                    this.reset();
+                    const r = await this._runOnce(silence.slice());
+                    const p = this._extractProb(r);
+                    this._updateStateFromResults(r);
+                    return p;
+                };
+                let silenceProb;
+                try {
+                    silenceProb = await trySr([1]);
+                    console.log("[VAD] sr tensor shape = [1] OK");
+                } catch (e1) {
+                    console.warn("[VAD] sr shape [1] 失败，回退 scalar []：", e1?.message || e1);
+                    try {
+                        silenceProb = await trySr([]);
+                        console.log("[VAD] sr tensor shape = [] (scalar) OK");
+                    } catch (e2) {
+                        console.error("[VAD] warmup 失败", { error: e2, inputNames: this.session.inputNames, outputNames: this.session.outputNames });
+                        throw new Error("VAD warmup 失败: " + (e2?.message || e2));
+                    }
+                }
+                console.log("[VAD] warmup silence prob:", silenceProb);
+                let sineProb;
+                try {
+                    const r2 = await this._runOnce(sine.slice());
+                    sineProb = this._extractProb(r2);
+                    this._updateStateFromResults(r2);
+                } catch (e) {
+                    console.error("[VAD] warmup 正弦波失败", e);
+                    throw new Error("VAD warmup(sine) 失败: " + (e?.message || e));
+                }
+                console.log("[VAD] warmup sine prob:", sineProb);
+                this.reset();
+            }
+
+            async process(frame) {
+                const results = await this._runOnce(frame);
+                const prob = this._extractProb(results);
+                this._updateStateFromResults(results);
+                return prob;
+            }
+        }
+
+        // ==================== SenseVoice 特征前端 ====================
+        const FBANK_CFG = {
+            sampleRate: 16000,
+            numMel: 80,
+            frameLength: 400,
+            frameShift: 160,
+            fftSize: 512,
+            lowFreq: 20,
+            highFreq: 8000,
+            preemph: 0.97,
+        };
+        const LFR_M = 7;
+        const LFR_N = 6;
+
+        function hzToMel(f) { return 1127.0 * Math.log(1.0 + f / 700.0); }
+
+        function fftInPlace(re, im) {
+            const n = re.length;
+            for (let i = 1, j = 0; i < n; i++) {
+                let bit = n >> 1;
+                for (; j & bit; bit >>= 1) j ^= bit;
+                j ^= bit;
+                if (i < j) {
+                    const tr = re[i]; re[i] = re[j]; re[j] = tr;
+                    const ti = im[i]; im[i] = im[j]; im[j] = ti;
+                }
+            }
+            for (let len = 2; len <= n; len <<= 1) {
+                const ang = -2 * Math.PI / len;
+                const wr = Math.cos(ang), wi = Math.sin(ang);
+                for (let i = 0; i < n; i += len) {
+                    let cwr = 1, cwi = 0;
+                    const half = len >> 1;
+                    for (let k = 0; k < half; k++) {
+                        const a = i + k, b = i + k + half;
+                        const tr = re[b] * cwr - im[b] * cwi;
+                        const ti = re[b] * cwi + im[b] * cwr;
+                        re[b] = re[a] - tr; im[b] = im[a] - ti;
+                        re[a] += tr; im[a] += ti;
+                        const ncwr = cwr * wr - cwi * wi;
+                        cwi = cwr * wi + cwi * wr;
+                        cwr = ncwr;
+                    }
+                }
+            }
+        }
+
+        class FbankExtractor {
+            constructor(cfg) {
+                this.cfg = cfg;
+                this.window = this._buildPoveyWindow(cfg.frameLength);
+                this.melFilters = this._buildMelFilters();
+            }
+            _buildPoveyWindow(N) {
+                const w = new Float32Array(N);
+                for (let i = 0; i < N; i++) {
+                    const v = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1));
+                    w[i] = Math.pow(v, 0.85);
+                }
+                return w;
+            }
+            _buildMelFilters() {
+                const { sampleRate, fftSize, numMel, lowFreq, highFreq } = this.cfg;
+                const numBins = (fftSize >> 1) + 1;
+                const melLow = hzToMel(lowFreq), melHigh = hzToMel(highFreq);
+                const points = [];
+                for (let i = 0; i < numMel + 2; i++) {
+                    points.push(melLow + (melHigh - melLow) * i / (numMel + 1));
+                }
+                const binMel = new Float32Array(numBins);
+                for (let i = 0; i < numBins; i++) {
+                    binMel[i] = hzToMel(i * sampleRate / fftSize);
+                }
+                const filters = [];
+                for (let m = 0; m < numMel; m++) {
+                    const left = points[m], center = points[m + 1], right = points[m + 2];
+                    const full = new Float32Array(numBins);
+                    let start = -1, end = -1;
+                    for (let i = 0; i < numBins; i++) {
+                        const mf = binMel[i];
+                        let weight = 0;
+                        if (mf > left && mf <= center) weight = (mf - left) / (center - left);
+                        else if (mf > center && mf < right) weight = (right - mf) / (right - center);
+                        if (weight > 0) {
+                            if (start < 0) start = i;
+                            end = i;
+                            full[i] = weight;
+                        }
+                    }
+                    if (start < 0) { start = 0; end = 0; }
+                    const weights = full.slice(start, end + 1);
+                    filters.push({ start, weights });
+                }
+                return filters;
+            }
+            compute(samples) {
+                const { frameLength, frameShift, fftSize, numMel, preemph } = this.cfg;
+                if (samples.length < frameLength) return [];
+                const numFrames = 1 + Math.floor((samples.length - frameLength) / frameShift);
+                const feats = [];
+                const re = new Float32Array(fftSize);
+                const im = new Float32Array(fftSize);
+                const frame = new Float32Array(frameLength);
+                const numBins = (fftSize >> 1) + 1;
+                const power = new Float32Array(numBins);
+                for (let f = 0; f < numFrames; f++) {
+                    const start = f * frameShift;
+                    for (let i = 0; i < frameLength; i++) frame[i] = samples[start + i];
+                    let mean = 0;
+                    for (let i = 0; i < frameLength; i++) mean += frame[i];
+                    mean /= frameLength;
+                    for (let i = 0; i < frameLength; i++) frame[i] -= mean;
+                    for (let i = frameLength - 1; i > 0; i--) frame[i] -= preemph * frame[i - 1];
+                    frame[0] -= preemph * frame[0];
+                    for (let i = 0; i < fftSize; i++) {
+                        re[i] = i < frameLength ? frame[i] * this.window[i] : 0;
+                        im[i] = 0;
+                    }
+                    fftInPlace(re, im);
+                    for (let k = 0; k < numBins; k++) power[k] = re[k] * re[k] + im[k] * im[k];
+                    const melFrame = new Float32Array(numMel);
+                    for (let m = 0; m < numMel; m++) {
+                        const filt = this.melFilters[m];
+                        const w = filt.weights;
+                        let sum = 0;
+                        for (let k = 0; k < w.length; k++) sum += power[filt.start + k] * w[k];
+                        melFrame[m] = Math.log(Math.max(sum, 1e-10));
+                    }
+                    feats.push(melFrame);
+                }
+                return feats;
+            }
+        }
+
+        function applyLFR(feats, m, n) {
+            const T = feats.length;
+            if (T === 0) return [];
+            const dim = feats[0].length;
+            const half = Math.floor((m - 1) / 2);
+            const padded = [];
+            for (let i = 0; i < half; i++) padded.push(feats[0]);
+            for (let i = 0; i < T; i++) padded.push(feats[i]);
+            const Tp = padded.length;
+            const Tlfr = Math.ceil(T / n);
+            const out = [];
+            for (let i = 0; i < Tlfr; i++) {
+                const frame = new Float32Array(m * dim);
+                for (let j = 0; j < m; j++) {
+                    const idx = i * n + j;
+                    const src = idx < Tp ? padded[idx] : padded[Tp - 1];
+                    frame.set(src, j * dim);
+                }
+                out.push(frame);
+            }
+            return out;
+        }
+
+        // ==================== SenseVoiceASRController ====================
+        class SenseVoiceASRController {
+            constructor() {
+                this.session = null;
+                this.fbank = null;
+                this.idToToken = null;
+                this.negMean = null;
+                this.invStd = null;
+                this.blankId = 0;
+                this.ready = false;
+                this._intType = "int32";
+                this.inFeat = null;
+                this.inLen = null;
+                this.inLang = null;
+                this.inTn = null;
+                this.outName = null;
+            }
+            async init(modelUrl, tokensUrl, cmvnUrl) {
+                this.fbank = new FbankExtractor(FBANK_CFG);
+                const tokResp = await fetch(tokensUrl);
+                if (!tokResp.ok) throw new Error(`tokens.txt 加载失败 (${tokResp.status})`);
+                this._parseTokens(await tokResp.text());
+                const mvnResp = await fetch(cmvnUrl);
+                if (!mvnResp.ok) throw new Error(`am.mvn 加载失败 (${mvnResp.status})`);
+                this._parseCmvn(await mvnResp.text());
+                const expectDim = FBANK_CFG.numMel * LFR_M;
+                if (this.negMean && this.negMean.length !== expectDim) {
+                    console.warn(`[ASR] CMVN 维度=${this.negMean.length}，期望=${expectDim}`);
+                }
+                this.session = await ort.InferenceSession.create(modelUrl, {
+                    executionProviders: ["wasm"],
+                    graphOptimizationLevel: "all",
+                });
+                this._detectIO();
+                this.ready = true;
+                console.log("[ASR] 输入:", this.session.inputNames, "输出:", this.session.outputNames);
+            }
+            _parseTokens(text) {
+                const lines = text.split(/\r?\n/);
+                const pairs = [];
+                let maxId = 0;
+                for (const line of lines) {
+                    if (!line) continue;
+                    const idx = line.lastIndexOf(" ");
+                    if (idx < 0) continue;
+                    const sym = line.slice(0, idx);
+                    const id = parseInt(line.slice(idx + 1), 10);
+                    if (Number.isNaN(id)) continue;
+                    pairs.push([id, sym]);
+                    if (id > maxId) maxId = id;
+                }
+                this.idToToken = new Array(maxId + 1).fill("");
+                for (const [id, sym] of pairs) this.idToToken[id] = sym;
+            }
+            _parseCmvn(text) {
+                const toks = text.split(/\s+/).filter(Boolean);
+                let collecting = null;
+                let cur = [];
+                let mean = null, std = null;
+                for (const t of toks) {
+                    if (t === "<AddShift>") { collecting = "mean"; continue; }
+                    if (t === "<Rescale>") { collecting = "std"; continue; }
+                    if (t === "<Splice>" || t === "<LearnRateCoef>" || t === "<Nnet>" || t === "</Nnet>") continue;
+                    if (t === "[") { cur = []; continue; }
+                    if (t === "]") {
+                        if (collecting === "mean") mean = Float32Array.from(cur);
+                        else if (collecting === "std") std = Float32Array.from(cur);
+                        collecting = null; cur = [];
+                        continue;
+                    }
+                    if (collecting === "mean" || collecting === "std") {
+                        const v = parseFloat(t);
+                        if (!Number.isNaN(v)) cur.push(v);
+                    }
+                }
+                this.negMean = mean;
+                this.invStd = std;
+                if (!mean || !std) console.warn("[ASR] am.mvn 解析未得到完整 CMVN");
+            }
+            _detectIO() {
+                const ins = this.session.inputNames;
+                this.inLen = ins.find(n => /len/i.test(n)) || null;
+                this.inLang = ins.find(n => /lang/i.test(n)) || null;
+                this.inTn = ins.find(n => /(norm|itn)/i.test(n)) || null;
+                this.inFeat = ins.find(n => /(speech|feat|input|^x$)/i.test(n) && !/(len|lang|norm|itn)/i.test(n))
+                    || ins.find(n => n !== this.inLen && n !== this.inLang && n !== this.inTn)
+                    || ins[0];
+                const outs = this.session.outputNames;
+                this.outName = outs.find(n => /(logit|ctc)/i.test(n)) || outs[0];
+            }
+            applyCMVN(frames) {
+                const nm = this.negMean, isd = this.invStd;
+                if (!nm || !isd) return;
+                for (const f of frames) {
+                    const n = Math.min(f.length, nm.length);
+                    for (let i = 0; i < n; i++) f[i] = (f[i] + nm[i]) * isd[i];
+                }
+            }
+            async recognize(samples16k) {
+                if (!this.ready) return "";
+                if (!samples16k || samples16k.length < this.fbank.cfg.frameLength) return "";
+                const feats = this.fbank.compute(samples16k);
+                if (!feats.length) return "";
+                const lfr = applyLFR(feats, LFR_M, LFR_N);
+                this.applyCMVN(lfr);
+                const T = lfr.length;
+                const dim = lfr[0].length;
+                const flat = new Float32Array(T * dim);
+                for (let i = 0; i < T; i++) flat.set(lfr[i], i * dim);
+                const logits = await this._run(flat, T, dim);
+                if (!logits) return "";
+                return this._ctcDecode(logits);
+            }
+            async _run(flat, T, dim) {
+                const featTensor = new ort.Tensor("float32", flat, [1, T, dim]);
+                const tryRun = async (intType) => {
+                    const mk = (val) => intType === "int64"
+                        ? new ort.Tensor("int64", BigInt64Array.from([BigInt(val)]), [1])
+                        : new ort.Tensor("int32", Int32Array.from([val]), [1]);
+                    const feeds = {};
+                    feeds[this.inFeat] = featTensor;
+                    if (this.inLen) feeds[this.inLen] = mk(T);
+                    if (this.inLang) feeds[this.inLang] = mk(SENSEVOICE_LANGUAGE);
+                    if (this.inTn) feeds[this.inTn] = mk(SENSEVOICE_TEXTNORM);
+                    const out = await this.session.run(feeds);
+                    return out[this.outName] || out[this.session.outputNames[0]];
+                };
+                try { return await tryRun(this._intType); }
+                catch (e) {
+                    const alt = this._intType === "int32" ? "int64" : "int32";
+                    try { const r = await tryRun(alt); this._intType = alt; return r; }
+                    catch (e2) { console.error("[ASR] 推理失败:", e2); return null; }
+                }
+            }
+            _ctcDecode(logits) {
+                const dims = logits.dims;
+                const data = logits.data;
+                const T = dims[dimensions.length - 2] || dims[1];
+                const V = dims[dimensions.length - 1] || dims[2];
+                let prev = -1;
+                const ids = [];
+                for (let t = 0; t < T; t++) {
+                    const base = t * V;
+                    let best = 0, bv = data[base];
+                    for (let v = 1; v < V; v++) {
+                        const val = data[base + v];
+                        if (val > bv) { bv = val; best = v; }
+                    }
+                    if (best !== this.blankId && best !== prev) ids.push(best);
+                    prev = best;
+                }
+                let pieces = ids.map(id => this.idToToken[id] ?? "");
+                pieces = pieces.filter(p => p && !(p.startsWith("<|") && p.endsWith("|>")) && !(p.startsWith("<") && p.endsWith(">")));
+                let text = pieces.join("");
+                text = text.replace(/▁/g, " ").replace(/\s+/g, " ").trim();
+                return text;
+            }
+        }
+
+        // ==================== AudioWorkletRecorder ====================
+        class AudioWorkletRecorder {
+            constructor() {
+                this.ctx = null;
+                this.stream = null;
+                this.node = null;
+                this.source = null;
+                this.muteGain = null;
+                this.resampler = null;
+                this._buf = new Float32Array(0);
+                this.onFrame = null;
+                this.running = false;
+            }
+            async start(onFrame) {
+                this.onFrame = onFrame;
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                if (this.ctx.state === "suspended") await this.ctx.resume();
+                this.stream = await navigator.mediaDevices.getUserMedia({
+                    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+                });
+                const blob = new Blob([WORKLET_CODE], { type: "application/javascript" });
+                const url = URL.createObjectURL(blob);
+                await this.ctx.audioWorklet.addModule(url);
+                URL.revokeObjectURL(url);
+                this.source = this.ctx.createMediaStreamSource(this.stream);
+                this.node = new AudioWorkletNode(this.ctx, "capture-processor");
+                this.muteGain = this.ctx.createGain();
+                this.muteGain.gain.value = 0;
+                this.source.connect(this.node);
+                this.node.connect(this.muteGain);
+                this.muteGain.connect(this.ctx.destination);
+                this.resampler = new AudioResampler(this.ctx.sampleRate, 16000);
+                this._buf = new Float32Array(0);
+                this.node.port.onmessage = (e) => this._onChunk(e.data);
+                this.running = true;
+                console.log(`[Recorder] 设备采样率 ${this.ctx.sampleRate}Hz → 16000Hz`);
+                return this.ctx.sampleRate;
+            }
+            _onChunk(chunk) {
+                if (!this.running) return;
+                const res = this.resampler.process(chunk);
+                if (!res.length) return;
+                let merged;
+                if (this._buf.length === 0) merged = res;
+                else {
+                    merged = new Float32Array(this._buf.length + res.length);
+                    merged.set(this._buf);
+                    merged.set(res, this._buf.length);
+                }
+                let off = 0;
+                while (merged.length - off >= 512) {
+                    const f = merged.slice(off, off + 512);
+                    off += 512;
+                    if (this.onFrame) this.onFrame(f);
+                }
+                this._buf = off < merged.length ? merged.slice(off) : new Float32Array(0);
+            }
+            async stop() {
+                this.running = false;
+                try { if (this.node) this.node.port.onmessage = null; } catch (e) {}
+                try { if (this.source) this.source.disconnect(); } catch (e) {}
+                try { if (this.node) this.node.disconnect(); } catch (e) {}
+                try { if (this.muteGain) this.muteGain.disconnect(); } catch (e) {}
+                try { if (this.stream) this.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+                try { if (this.ctx && this.ctx.state !== "closed") await this.ctx.close(); } catch (e) {}
+                this.ctx = null; this.stream = null; this.node = null;
+                this.source = null; this.muteGain = null; this._buf = new Float32Array(0);
+            }
+        }
+
+        // ==================== TranscriptBuffer ====================
+        class TranscriptBuffer {
+            constructor(barEl, userEl) {
+                this.barEl = barEl;
+                this.userEl = userEl;
+                this.partial = "";
+                this.committed = "";
+            }
+            showListening() {
+                this.partial = ""; this.committed = "";
+                this.userEl.className = "subtitle-line subtitle-user partial";
+                this._render("…");
+                this.barEl.classList.add("show");
+            }
+            setPartial(text) {
+                this.partial = text;
+                this.userEl.className = "subtitle-line subtitle-user partial";
+                this._render(text || "…");
+                this.barEl.classList.add("show");
+            }
+            commit(text) {
+                this.committed = text; this.partial = "";
+                this.userEl.className = "subtitle-line subtitle-user final";
+                this._render(text);
+                this.barEl.classList.add("show");
+            }
+            _render(text) {
+                this.userEl.innerHTML = '<span class="subtitle-label">我</span><span class="subtitle-text"></span>';
+                this.userEl.querySelector(".subtitle-text").textContent = text;
+            }
+            hide() { this.barEl.classList.remove("show"); }
+        }
+
+        // ==================== ASRStateManager ====================
+        const ASRState = { IDLE: "idle", LISTENING: "listening", SPEAKING: "speaking", PROCESSING: "processing" };
+        class ASRStateManager {
+            constructor(onChange) { this.state = ASRState.IDLE; this.onChange = onChange || null; }
+            set(s) { if (this.state === s) return; this.state = s; if (this.onChange) this.onChange(s); }
+            is(s) { return this.state === s; }
+        }
+
+        // ==================== LLMController ====================
+        class LLMController {
+            async *streamChat(messages, apiBaseUrl, apiKey, model) {
+                console.log("[LLM] 开始流式请求...");
+                const body = { model, messages, stream: true, max_tokens: 300, temperature: 0.8 };
+                const response = await fetch(`${apiBaseUrl}/chat/completions`, {
+                    method: "POST",
+                    headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                });
+                if (!response.ok) throw new Error(`LLM API 错误 (${response.status})`);
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = "";
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop() || "";
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (!trimmed || !trimmed.startsWith("data: ")) continue;
+                        const jsonStr = trimmed.slice(6);
+                        if (jsonStr === "[DONE]") { console.log("[LLM] 流式完成"); return; }
+                        try {
+                            const parsed = JSON.parse(jsonStr);
+                            const delta = parsed.choices?.[0]?.delta?.content;
+                            if (delta) yield delta;
+                        } catch (e) {}
+                    }
+                }
+                if (buffer.trim()) {
+                    const trimmed = buffer.trim();
+                    if (trimmed.startsWith("data: ") && trimmed.slice(6) !== "[DONE]") {
+                        try {
+                            const delta = JSON.parse(trimmed.slice(6)).choices?.[0]?.delta?.content;
+                            if (delta) yield delta;
+                        } catch (e) {}
+                    }
+                }
+            }
+        }
+
+        // ==================== TTSController ====================
+        class TTSController {
+            async generateSpeech(text, apiBaseUrl, apiKey, model, voice) {
+                const cleanText = text.replace(/\[.*?\]/g, "").trim();
+                console.log(`[TTS] 生成语音: "${cleanText.substring(0, 30)}..."`);
+                const body = { model, input: cleanText, voice, response_format: "mp3", speed: 1.0 };
+                const response = await fetch(`${apiBaseUrl}/audio/speech`, {
+                    method: "POST",
+                    headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                });
+                if (!response.ok) throw new Error(`TTS API 错误 (${response.status})`);
+                const clone = response.clone();
+                const responseText = await clone.text();
+                try {
+                    const json = JSON.parse(responseText);
+                    if (json.output?.audio?.url) return json.output.audio.url;
+                } catch (e) {}
+                return await response.blob();
+            }
+        }
+
+        // ==================== PlaybackQueue ====================
+        class PlaybackQueue {
+            constructor() {
+                this.queue = [];
+                this.isPlaying = false;
+                this._stopped = false;
+                this.onAllComplete = null;
+                this.onItemStart = null;
+                this.onStop = null;
+                this._currentAudio = null;
+                this._nextTimer = null;
+            }
+            enqueue(item) {
+                this.queue.push(item);
+                if (!this.isPlaying && !this._stopped) this._playNext();
+            }
+            async _playNext() {
+                if (this._stopped || this.queue.length === 0) {
+                    this.isPlaying = false;
+                    if (this._stopped && this.queue.length > 0) this.queue = [];
+                    if (this.queue.length === 0 && this.onAllComplete && !this._stopped) this.onAllComplete();
+                    return;
+                }
+                this.isPlaying = true;
+                const item = this.queue.shift();
+                expressionController.setExpression(item.expression);
+                if (this.onItemStart) this.onItemStart(item);
+                let audioSource;
+                try {
+                    audioSource = await item.ttsPromise;
+                } catch (e) {
+                    console.warn("TTS生成失败，跳过一句");
+                    this._playNext();
+                    return;
+                }
+                if (this._stopped) { this.isPlaying = false; return; }
+                let audio;
+                if (typeof audioSource === "string") {
+                    audio = new Audio(audioSource);
+                } else {
+                    const audioUrl = URL.createObjectURL(audioSource);
+                    audio = new Audio(audioUrl);
+                    audio.addEventListener("ended", () => URL.revokeObjectURL(audioUrl), { once: true });
+                }
+                this._currentAudio = audio;
+                if (item.animFile && animationController.hasAction(item.animFile)) {
+                    animationController.playAction(item.animFile, 0.3);
+                } else {
+                    animationController.returnToIdle(0.3);
+                }
+                audio.play().catch(e => console.warn("音频播放失败:", e));
+                const handleAudioEnded = () => {
+                    if (this._stopped) return;
+                    if (this.queue.length > 0) {
+                        this._nextTimer = setTimeout(() => {
+                            this._nextTimer = null;
+                            this._currentAudio = null;
+                            this._playNext();
+                        }, 200);
+                    } else {
+                        this._currentAudio = null;
+                        this.isPlaying = false;
+                        if (this.onAllComplete && !this._stopped) this.onAllComplete();
+                    }
+                };
+                audio.onended = handleAudioEnded;
+                audio.onerror = handleAudioEnded;
+            }
+            stop() {
+                this._stopped = true;
+                if (this._currentAudio) { try { this._currentAudio.pause(); this._currentAudio = null; } catch (e) {} }
+                if (this._nextTimer) { clearTimeout(this._nextTimer); this._nextTimer = null; }
+                this.queue = [];
+                this.isPlaying = false;
+                animationController.returnToIdle(0.3);
+                expressionController.resetToDefault();
+                if (this.onStop) this.onStop();
+            }
+            reset() {
+                this._stopped = false;
+                this.queue = [];
+                this.isPlaying = false;
+                this._currentAudio = null;
+                if (this._nextTimer) { clearTimeout(this._nextTimer); this._nextTimer = null; }
+            }
+            getQueueLength() { return this.queue.length + (this.isPlaying ? 1 : 0); }
+        }
+
+        // ==================== 行解析 ====================
+        function parseLine(line) {
+            const trimmed = line.trim();
+            if (!trimmed) return null;
+            let actionTag = null;
+            let exprTag = null;
+            let remaining = trimmed;
+            const tagRegex = /^\[([^\]]+)\]\s*/;
+            while (true) {
+                const match = remaining.match(tagRegex);
+                if (!match) break;
+                const tag = match[1].toLowerCase();
+                if (VALID_ACTION_TAGS.has(tag)) { if (!actionTag) actionTag = tag; }
+                else if (VALID_EXPR_TAGS.has(tag)) { if (!exprTag) exprTag = tag; }
+                else break;
+                remaining = remaining.slice(match[0].length);
+            }
+            const text = remaining.trim();
+            if (!text && !actionTag && !exprTag) return null;
+            return {
+                action: actionTag || null,
+                expression: exprTag ? EXPR_TAG_MAP[exprTag] : DEFAULT_EXPR,
+                animFile: (actionTag && actionTag !== "waiting") ? (ACTION_TAG_MAP[actionTag] || null) : null,
+                text: text || "",
+            };
+        }
+
+        // ==================== AIController ====================
+        class AIController {
+            constructor() {
+                this.recorder = new AudioWorkletRecorder();
+                this.vad = new SileroVADController();
+                this.asr = new SenseVoiceASRController();
+                this.llm = new LLMController();
+                this.tts = new TTSController();
+                this.playbackQueue = new PlaybackQueue();
+                this.transcript = new TranscriptBuffer(
+                    document.getElementById("subtitleBar"),
+                    document.getElementById("subtitleUser")
+                );
+                this.aiSubEl = document.getElementById("subtitleAI");
+                this.stateMgr = new ASRStateManager();
+                this.modelReady = false;
+                this.uiState = "idle";
+                this.conversationHistory = [];
+
+                this.startThreshold = 0.35;
+                this.startThresholdDuringTTS = 0.65;
+                this.endThreshold = 0.25;
+                this.startFrames = 2;
+                this.startFramesDuringTTS = 6;
+                this.endpointFrames = 28;
+                this.preRollFrames = 12;
+                this.partialIntervalFrames = 9;
+                this.maxSpeechFrames = Math.floor(30000 / 32);
+                this.longSilenceFrames = Math.floor(12000 / 32);
+                this.vadStartByEnergyThreshold = 0.012;
+                this.vadEndByEnergyThreshold = 0.008;
+                this.debugVad = true;
+                this._lastVadDebug = 0;
+                this._lastVadErrLog = 0;
+                this._lastPartialErrLog = 0;
+                this._frameQueue = [];
+                this._draining = false;
+                this._reset();
+
+                this.playbackQueue.onAllComplete = () => this._onPlaybackComplete();
+                this.playbackQueue.onItemStart = (item) => this._showAISubtitle(item.text);
+                this.playbackQueue.onStop = () => this._hideAISubtitle();
+            }
+
+            _reset() {
+                this._speech = [];
+                this._preRoll = [];
+                this._startCount = 0;
+                this._silenceCount = 0;
+                this._speakFrames = 0;
+                this._idleFrames = 0;
+                this._framesSincePartial = 0;
+                this._asrBusy = false;
+                this._abortFlag = false;
+                this._processing = false;
+            }
+
+            async initModels() {
+                this._setModelStatus("loading", "ASR 加载中…");
+                try {
+                    if (!ort) throw new Error("ONNX Runtime Web 未加载");
+                    ort.env.wasm.wasmPaths = ORT_WASM_PATH;
+                    ort.env.wasm.proxy = true;
+                    const threads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 4) : 1;
+                    ort.env.wasm.numThreads = threads;
+                    try { ort.env.wasm.simd = true; } catch (e) {}
+                    const t0 = performance.now();
+                    await this.asr.init(ASR_MODEL_URL, ASR_TOKENS_URL, ASR_CMVN_URL);
+                    await this.vad.init(VAD_MODEL_URL);
+                    try { await this.asr.recognize(new Float32Array(Math.floor(16000 * 0.3))); } catch (e) { console.warn("[ASR] 预热警告:", e); }
+                    const dt = Math.round(performance.now() - t0);
+                    this.modelReady = true;
+                    this._setModelStatus("ready", `ASR 已就绪 · ${dt}ms · ${threads}线程`);
+                    this._updateUI();
+                    toast.success(`本地语音识别就绪 (SenseVoice, ${dt}ms)`);
+                } catch (e) {
+                    console.error(e);
+                    this.modelReady = false;
+                    this._setModelStatus("error", "ASR/VAD 加载失败：" + (e.message || e));
+                    toast.error("模型加载/自检失败：请查看控制台日志，并确认模型文件已放在同目录并经本地服务器访问", 7000);
+                    this._updateUI();
+                }
+            }
+
+            async start() {
+                if (this.uiState === "running") return;
+                if (!this.modelReady) { toast.warn("ASR 模型尚未就绪"); return; }
+                if (!currentVRM) { toast.warn("请先加载 VRM 模型"); return; }
+                if (!apiKeyInput.value.trim()) { toast.warn("请先填写 API Key"); return; }
+                this._reset();
+                this.conversationHistory = [];
+                this.vad.reset();
+                this.playbackQueue.reset();
+                this._frameQueue = [];
+                try {
+                    await this.recorder.start((frame) => this._enqueueFrame(frame));
+                    this.uiState = "running";
+                    this.stateMgr.set(ASRState.LISTENING);
+                    this._updateUI();
+                    this.transcript.showListening();
+                    this._hideAISubtitle();
+                    animationController.returnToIdle(0.3);
+                    toast.success("AI 模式已启动，开始聆听…");
+                } catch (e) {
+                    this.uiState = "idle";
+                    this._updateUI();
+                    toast.error("麦克风启动失败：" + (e.message || e));
+                }
+            }
+
+            async stop() {
+                if (this.uiState === "idle") return;
+                this.uiState = "stopping";
+                this._updateUI();
+                this._abortFlag = true;
+                this.playbackQueue.stop();
+                await this.recorder.stop();
+                this._frameQueue = [];
+                this._reset();
+                this.stateMgr.set(ASRState.IDLE);
+                this.transcript.hide();
+                this._hideAISubtitle();
+                animationController.returnToIdle(0.3);
+                expressionController.resetToDefault();
+                this.uiState = "idle";
+                this._updateUI();
+                toast.info("AI 模式已停止");
+            }
+
+            _enqueueFrame(frame) {
+                if (this.uiState !== "running") return;
+                this._frameQueue.push(frame);
+                if (!this._draining) this._drain();
+            }
+            async _drain() {
+                this._draining = true;
+                while (this._frameQueue.length && this.uiState === "running") {
+                    const frame = this._frameQueue.shift();
+                    try { await this._handleFrame(frame); } catch (e) { console.warn("[frame]", e); }
+                }
+                this._draining = false;
+            }
+
+            async _handleFrame(frame) {
+                const rms = computeRMS(frame);
+                let prob = 0;
+                let vadOk = true;
+                try {
+                    prob = await this.vad.process(frame.slice());
+                } catch (e) {
+                    vadOk = false;
+                    const now = performance.now();
+                    if (now - this._lastVadErrLog > 1000) {
+                        this._lastVadErrLog = now;
+                        console.error("[VAD] 推理失败", e);
+                        toast.error("[VAD] 推理失败（已转能量兜底）：" + (e?.message || e), 4000);
+                    }
+                }
+                const isSpeaking = this.stateMgr.is(ASRState.SPEAKING);
+                const aiTalking = this.playbackQueue.isPlaying || this._processing;
+
+                if (this.debugVad) {
+                    const now = performance.now();
+                    if (now - this._lastVadDebug > 500) {
+                        this._lastVadDebug = now;
+                        console.log(`[VAD] prob=${prob.toFixed(3)} rms=${rms.toFixed(3)} state=${this.stateMgr.state} queue=${this._frameQueue.length}` +
+                            (vadOk ? "" : " (vad-error→energy-fallback)"));
+                    }
+                }
+
+                if (!isSpeaking) {
+                    this._preRoll.push(frame);
+                    if (this._preRoll.length > this.preRollFrames) this._preRoll.shift();
+                    const thr = aiTalking ? this.startThresholdDuringTTS : this.startThreshold;
+                    const need = aiTalking ? this.startFramesDuringTTS : this.startFrames;
+                    const energyStartThr = aiTalking ? this.vadStartByEnergyThreshold * 1.6 : this.vadStartByEnergyThreshold;
+                    const isVoiceStart = (prob >= thr) || (rms >= energyStartThr);
+                    if (isVoiceStart) this._startCount++;
+                    else { this._startCount = 0; this._idleFrames++; }
+                    if (this._startCount >= need) {
+                        this._beginSpeech();
+                    } else if (!aiTalking && this._idleFrames >= this.longSilenceFrames) {
+                        this._idleFrames = 0;
+                        this._triggerProactive();
+                    }
+                } else {
+                    this._speech.push(frame);
+                    this._speakFrames++;
+                    const isVoiceKeep = (prob >= this.endThreshold) || (rms >= this.vadEndByEnergyThreshold);
+                    if (isVoiceKeep) this._silenceCount = 0;
+                    else this._silenceCount++;
+                    this._framesSincePartial++;
+                    if (this._framesSincePartial >= this.partialIntervalFrames && !this._asrBusy) {
+                        this._framesSincePartial = 0;
+                        this._runPartial();
+                    }
+                    if (this._silenceCount >= this.endpointFrames || this._speakFrames >= this.maxSpeechFrames) {
+                        this._endSpeech();
+                    }
+                }
+            }
+
+            _beginSpeech() {
+                this._bargeIn();
+                this.stateMgr.set(ASRState.SPEAKING);
+                this._speech = this._preRoll.slice();
+                this._preRoll = [];
+                this._startCount = 0;
+                this._silenceCount = 0;
+                this._speakFrames = this._speech.length;
+                this._framesSincePartial = 0;
+                this._idleFrames = 0;
+                this.transcript.setPartial("");
+                console.log("🎤 检测到说话");
+                toast.info("🎤 检测到说话", 700);
+            }
+
+            _bargeIn() {
+                const wasActive = this.playbackQueue.isPlaying || this.playbackQueue.getQueueLength() > 0 || this._processing;
+                this._abortFlag = true;
+                this.playbackQueue.stop();
+                this._hideAISubtitle();
+                this._processing = false;
+                if (wasActive) animationController.returnToIdle(0.2);
+            }
+
+            async _runPartial() {
+                if (this._asrBusy) return;
+                this._asrBusy = true;
+                const snapshot = mergeFloat32(this._speech);
+                try {
+                    const text = await this.asr.recognize(snapshot);
+                    if (this.stateMgr.is(ASRState.SPEAKING)) this.transcript.setPartial(text);
+                } catch (e) {
+                    const now = performance.now();
+                    if (now - this._lastPartialErrLog > 2000) {
+                        this._lastPartialErrLog = now;
+                        console.warn("[ASR] partial 识别失败:", e);
+                    }
+                } finally { this._asrBusy = false; }
+            }
+
+            async _endSpeech() {
+                const frames = this._speech;
+                this.stateMgr.set(ASRState.PROCESSING);
+                this._processing = true;
+                this._silenceCount = 0;
+                this._speakFrames = 0;
+                this._framesSincePartial = 0;
+                this._speech = [];
+                this._preRoll = [];
+                const audio = mergeFloat32(frames);
+                const waitStart = performance.now();
+                while (this._asrBusy && (performance.now() - waitStart) < 300) {
+                    await new Promise(r => setTimeout(r, 10));
+                }
+                this._asrBusy = true;
+                console.log("[ASR] final audio seconds:", (audio.length / 16000).toFixed(2), "samples:", audio.length);
+                let userText = "";
+                try { userText = await this.asr.recognize(audio); }
+                catch (e) { console.warn("[ASR] 最终识别失败:", e); }
+                finally { this._asrBusy = false; }
+                console.log("[ASR] final text:", userText);
+                this.stateMgr.set(ASRState.LISTENING);
+                if (!userText || !userText.trim()) {
+                    this._processing = false;
+                    this.transcript.setPartial("");
+                    return;
+                }
+                this.transcript.commit(userText.trim());
+                await this._respond(userText.trim());
+            }
+
+            _addToHistory(role, content) {
+                this.conversationHistory.push({ role, content });
+                if (this.conversationHistory.length > 6) this.conversationHistory = this.conversationHistory.slice(-6);
+            }
+
+            _apiCfg() {
+                return {
+                    apiKey: apiKeyInput.value.trim(),
+                    apiBaseUrl: apiBaseUrlInput.value.trim() || "https://run.v3.cm/v1",
+                    llmModel: llmModelInput.value.trim() || "gemini-2.5-flash",
+                    ttsModel: ttsModelInput.value.trim() || "qwen-tts",
+                    ttsVoice: ttsVoiceInput.value.trim() || "Cherry",
+                };
+            }
+
+            async _consumeStream(messages, cfg) {
+                this._llmBuffer = "";
+                let fullAiText = "";
+                const gen = this.llm.streamChat(messages, cfg.apiBaseUrl, cfg.apiKey, cfg.llmModel);
+                const flush = (line) => {
+                    const parsed = parseLine(line);
+                    if (!parsed || !parsed.text) return;
+                    fullAiText += (fullAiText ? " " : "") + parsed.text;
+                    const ttsPromise = this.tts.generateSpeech(parsed.text, cfg.apiBaseUrl, cfg.apiKey, cfg.ttsModel, cfg.ttsVoice).catch(e => { throw e; });
+                    this.playbackQueue.enqueue({ animFile: parsed.animFile, expression: parsed.expression, text: parsed.text, ttsPromise });
+                };
+                for await (const delta of gen) {
+                    if (this._abortFlag) break;
+                    this._llmBuffer += delta;
+                    const lines = this._llmBuffer.split("\n");
+                    this._llmBuffer = lines.pop() || "";
+                    for (const line of lines) {
+                        if (this._abortFlag) break;
+                        flush(line);
+                    }
+                }
+                if (!this._abortFlag && this._llmBuffer.trim()) flush(this._llmBuffer);
+                return fullAiText;
+            }
+
+            async _respond(userText) {
+                this._processing = true;
+                this._abortFlag = false;
+                this.playbackQueue.reset();
+                const cfg = this._apiCfg();
+                try {
+                    const actionTagsStr = [...VALID_ACTION_TAGS].map(t => `[${t}]`).join(" ");
+                    const exprTagsStr = [...VALID_EXPR_TAGS].map(t => `[${t}]`).join(" ");
+                    const systemPrompt = `你是用户温柔的猫娘女友。一次回复最多四句话。每句话单独占一行。
+动作标签：${actionTagsStr}
+表情标签：${exprTagsStr}
+规则：每句首必须包含一个动作标签和一个表情标签，未指定默认[relax]`;
+                    const messages = [
+                        { role: "system", content: systemPrompt },
+                        ...this.conversationHistory.slice(-6),
+                        { role: "user", content: userText },
+                    ];
+                    const fullAiText = await this._consumeStream(messages, cfg);
+                    if (fullAiText.trim()) {
+                        this._addToHistory("user", userText);
+                        this._addToHistory("assistant", fullAiText.trim());
+                    }
+                    if (this.playbackQueue.getQueueLength() === 0 && !this.playbackQueue.isPlaying) {
+                        this._onPlaybackComplete();
+                    }
+                } catch (e) {
+                    if (!this._abortFlag) {
+                        toast.error("处理出错：" + (e.message || "未知错误"));
+                        this._onPlaybackComplete();
+                    }
+                }
+            }
+
+            async _triggerProactive() {
+                if (this._processing || this.playbackQueue.isPlaying) return;
+                this._processing = true;
+                this._abortFlag = false;
+                this.playbackQueue.reset();
+                const cfg = this._apiCfg();
+                try {
+                    const systemPrompt = "你是用户温柔的猫娘女友。用户已沉默，请主动关心或撒娇。一次回复最多两句话。每句话单独占一行。包含动作标签和表情标签。";
+                    const messages = [
+                        { role: "system", content: systemPrompt },
+                        ...this.conversationHistory.slice(-6),
+                        { role: "user", content: "用户当前处于沉默状态。" },
+                    ];
+                    const fullAiText = await this._consumeStream(messages, cfg);
+                    if (fullAiText.trim()) {
+                        this._addToHistory("user", "用户当前处于沉默状态。");
+                        this._addToHistory("assistant", fullAiText.trim());
+                    }
+                    if (this.playbackQueue.getQueueLength() === 0 && !this.playbackQueue.isPlaying) {
+                        this._onPlaybackComplete();
+                    }
+                } catch (e) {
+                    if (!this._abortFlag) this._onPlaybackComplete();
+                }
+            }
+
+            _onPlaybackComplete() {
+                if (this.uiState !== "running") return;
+                this._processing = false;
+                this._idleFrames = 0;
+                this._hideAISubtitle();
+                this.transcript.setPartial("");
+                animationController.returnToIdle(0.4);
+                expressionController.resetToDefault();
+            }
+
+            _showAISubtitle(text) {
+                const t = (text || "").replace(/\[.*?\]/g, "").trim();
+                if (!t) return;
+                this.aiSubEl.style.display = "block";
+                this.aiSubEl.innerHTML = '<span class="subtitle-label">桌宠</span><span class="subtitle-text"></span>';
+                this.aiSubEl.querySelector(".subtitle-text").textContent = t;
+                this.transcript.barEl.classList.add("show");
+            }
+            _hideAISubtitle() {
+                this.aiSubEl.style.display = "none";
+                this.aiSubEl.textContent = "";
+            }
+
+            _setModelStatus(kind, text) {
+                const dot = document.getElementById("modelStatusDot");
+                const t = document.getElementById("modelStatusText");
+                dot.classList.remove("idle", "loading", "ready", "error");
+                dot.classList.add(kind === "loading" ? "loading" : kind === "ready" ? "ready" : kind === "error" ? "error" : "idle");
+                t.textContent = text;
+            }
+
+            _updateUI() {
+                const dot = document.getElementById("aiStatusDot");
+                const text = document.getElementById("aiStatusText");
+                const btnStart = document.getElementById("btnStartAI");
+                const btnStop = document.getElementById("btnStopAI");
+                const info = document.getElementById("aiInfo");
+                dot.classList.remove("idle", "running", "stopped");
+                if (this.uiState === "idle") {
+                    dot.classList.add("idle");
+                    text.textContent = this.modelReady ? "未启动（模型就绪）" : "未启动";
+                    btnStart.disabled = !this.modelReady;
+                    btnStop.disabled = true;
+                    info.style.display = "none";
+                } else if (this.uiState === "running") {
+                    dot.classList.add("running");
+                    text.textContent = "AI模式运行中";
+                    btnStart.disabled = true;
+                    btnStop.disabled = false;
+                    info.style.display = "block";
+                    info.textContent = "🎤 正在聆听… 可随时打断";
+                } else if (this.uiState === "stopping") {
+                    dot.classList.add("stopped");
+                    text.textContent = "正在停止…";
+                    btnStart.disabled = true;
+                    btnStop.disabled = true;
+                    info.style.display = "block";
+                    info.textContent = "⏳ 正在清理资源…";
+                }
+            }
+        }
+
+        const aiController = new AIController();
+        aiController._updateUI();
+        aiController.initModels();
+
+        document.getElementById("btnStartAI").addEventListener("click", () => aiController.start());
+        document.getElementById("btnStopAI").addEventListener("click", () => aiController.stop());
+
+        window.addEventListener("beforeunload", () => {
+            if (aiController.uiState === "running") aiController.stop();
+        });
+
+        console.log("🚀 本地语音流水线就绪：AudioWorklet → 重采样16k → Silero VAD(自适应IO/warmup/能量兜底) → SenseVoice ONNX → 实时字幕 → LLM → TTS（支持打断）");
+    </script>
+</body>
+</html>
