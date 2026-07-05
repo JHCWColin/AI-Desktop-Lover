@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>科大讯飞实时语音识别（修复版）</title>
+    <style>
+        :root {
+            --bg: #f0f2f5;
+            --card-bg: #ffffff;
+            --text: #1a1a2e;
+            --sub: #555;
+            --border: #e0e0e0;
+            --green: #28a745;
+            --green-hover: #218838;
+            --red: #dc3545;
+            --red-hover: #c82333;
+            --warn-bg: #fff8e1;
+            --warn-border: #ffc107;
+            --log-bg: #f8f9fa;
+            --radius: 10px;
+        }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            padding: 20px;
+            max-width: 860px;
+            margin: auto;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+        .container {
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            padding: 28px 24px;
+            box-shadow: 0 2px 16px rgba(0, 0, 0, 0.07);
+        }
+        h2 {
+            margin-top: 0;
+            font-size: 1.4rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .warn {
+            background: var(--warn-bg);
+            color: #6d4c00;
+            padding: 12px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--warn-border);
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+        .btn-group {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 11px 30px;
+            font-size: 15px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+        #startBtn {
+            background: var(--green);
+            color: #fff;
+        }
+        #startBtn:hover {
+            background: var(--green-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+        }
+        #startBtn:disabled {
+            background: #adb5bd;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        #stopBtn {
+            background: var(--red);
+            color: #fff;
+        }
+        #stopBtn:hover {
+            background: var(--red-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+        }
+        #stopBtn:disabled {
+            background: #adb5bd;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .result-label {
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-bottom: 6px;
+            color: #444;
+        }
+        #result {
+            background: #fafbfc;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px 16px;
+            min-height: 160px;
+            max-height: 360px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: 'SF Mono', 'Consolas', 'Menlo', 'PingFang SC', monospace;
+            font-size: 14px;
+            line-height: 1.7;
+            color: #222;
+        }
+        #result .interim {
+            color: #888;
+            font-style: italic;
+        }
+        #result .final {
+            color: #111;
+            font-weight: 500;
+        }
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 12px;
+            font-size: 13px;
+            color: #666;
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ccc;
+            flex-shrink: 0;
+        }
+        .status-dot.recording {
+            background: #dc3545;
+            animation: pulse 0.9s infinite;
+        }
+        .status-dot.connected {
+            background: #28a745;
+        }
+        @keyframes pulse {
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.5);
+            }
+            50% {
+                box-shadow: 0 0 0 10px rgba(220, 53, 69, 0);
+            }
+        }
+        .stats-row {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            font-size: 12px;
+            color: #888;
+            margin-top: 6px;
+        }
+        .stats-row span {
+            background: #f1f3f5;
+            padding: 3px 8px;
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+        .log-area {
+            margin-top: 14px;
+            background: #1e1e2a;
+            color: #c9d1d9;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'SF Mono', 'Consolas', 'Menlo', monospace;
+            line-height: 1.5;
+        }
+        .log-area .log-item {
+            padding: 2px 0;
+            border-bottom: 1px solid #2a2a38;
+        }
+        .log-item.log-warn {
+            color: #f0ad4e;
+        }
+        .log-item.log-error {
+            color: #e5534b;
+        }
+        .log-item.log-success {
+            color: #56d364;
+        }
+        .log-item.log-info {
+            color: #79c0ff;
+        }
+        .log-item.log-audio {
+            color: #a5d6ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🎤 科大讯飞实时语音识别（流式·修复版）</h2>
+
+        <div class="warn">
+            ⚠️ <strong>安全提醒：</strong> 本页面中的 APIKey 和 APISecret 仅用于本地演示，<br>
+            请勿在生产环境的前端代码中暴露敏感凭证！实际部署请通过后端代理。
+        </div>
+
+        <div class="btn-group">
+            <button id="startBtn">🎙️ 开始识别</button>
+            <button id="stopBtn" disabled>⏹️ 停止识别</button>
+        </div>
+
+        <div class="result-label">📝 识别结果：</div>
+        <div id="result">等待开始识别...</div>
+
+        <div class="status-bar">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="statusText">就绪</span>
+        </div>
+        <div class="stats-row">
+            <span id="statSampleRate">采样率: --</span>
+            <span id="statResampled">重采样后: --</span>
+            <span id="statFrames">已发送帧: 0</span>
+            <span id="statBytes">已发送字节: 0</span>
+        </div>
+        <div class="log-area" id="logArea"></div>
+    </div>
+
+    <!-- CryptoJS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js">
+    </script>
+
+    <script>
+        (function() {
+            "use strict";
+
+            // ==================== 凭证配置 ====================
+            const APPID = '3029f9be';
+            const APIKey = 'a1eff87d5b81fc49bd210a7a947916c3';
+            const APISecret = 'YzMxZjY1NmRiMDhkOWQ1ZGFiMjM1NzAy';
+
+            // ==================== DOM 元素 ====================
+            const resultDiv = document.getElementById('result');
+            const statusText = document.getElementById('statusText');
+            const statusDot = document.getElementById('statusDot');
+            const logArea = document.getElementById('logArea');
+            const startBtn = document.getElementById('startBtn');
+            const stopBtn = document.getElementById('stopBtn');
+            const statSampleRate = document.getElementById('statSampleRate');
+            const statResampled = document.getElementById('statResampled');
+            const statFrames = document.getElementById('statFrames');
+            const statBytes = document.getElementById('statBytes');
+
+            // ==================== 全局状态 ====================
+            let ws = null;
+            let audioContext = null;
+            let mediaStream = null;
+            let scriptProcessor = null;
+            let isRecording = false;
+            let sendInterval = null;
+            let isClosing = false;
+            let frameCounter = 0;
+            let totalBytesSent = 0;
+            let originalSampleRate = 0;
+            let targetSampleRate = 16000;
+            let resampleRatio = 1;
+            // 重采样后的 Float32 样本缓冲区
+            let resampledBuffer = [];
+            // 用于累积原始样本的重采样器内部缓冲
+            let rawSampleBuffer = [];
+            // 当前中间结果累积
+            let currentInterimText = '';
+            let finalResultCount = 0;
+
+            // ==================== 日志系统 ====================
+            function addLog(msg, level = 'info') {
+                const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+                const div = document.createElement('div');
+                div.className = 'log-item';
+                // level: info, warn, error, success, audio
+                switch (level) {
+                    case 'warn':
+                        div.classList.add('log-warn');
+                        break;
+                    case 'error':
+                        div.classList.add('log-error');
+                        break;
+                    case 'success':
+                        div.classList.add('log-success');
+                        break;
+                    case 'audio':
+                        div.classList.add('log-audio');
+                        break;
+                    default:
+                        div.classList.add('log-info');
+                }
+                div.textContent = `[${time}] ${msg}`;
+                logArea.appendChild(div);
+                logArea.scrollTop = logArea.scrollHeight;
+                // 同时输出到控制台
+                const consoleMethod = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log';
+                console[consoleMethod](`[${time}] ${msg}`);
+            }
+
+            function setStatus(msg, dotClass = '') {
+                statusText.textContent = msg;
+                statusDot.className = 'status-dot ' + dotClass;
+            }
+
+            function updateStats() {
+                statSampleRate.textContent = `原始采样率: ${originalSampleRate || '--'} Hz`;
+                statResampled.textContent = `重采样后: ${targetSampleRate} Hz`;
+                statFrames.textContent = `已发送帧: ${frameCounter}`;
+                statBytes.textContent = `已发送字节: ${totalBytesSent.toLocaleString()}`;
+            }
+
+            function appendResult(text, isFinal = false) {
+                if (isFinal) {
+                    // 最终结果：清除之前的临时结果痕迹，追加最终文本
+                    finalResultCount++;
+                    const finalSpan = document.createElement('span');
+                    finalSpan.className = 'final';
+                    finalSpan.textContent = text;
+                    resultDiv.appendChild(finalSpan);
+                    // 如果结果区域初始有"等待开始识别..."，先清除
+                    if (resultDiv.textContent === '等待开始识别...' && finalResultCount === 1) {
+                        resultDiv.textContent = '';
+                        resultDiv.appendChild(finalSpan);
+                    }
+                    currentInterimText = '';
+                } else {
+                    // 中间结果：更新临时显示
+                    // 移除之前的临时节点
+                    const existingInterim = resultDiv.querySelector('.interim');
+                    if (existingInterim) {
+                        existingInterim.remove();
+                    }
+                    if (text) {
+                        const interimSpan = document.createElement('span');
+                        interimSpan.className = 'interim';
+                        interimSpan.textContent = text;
+                        resultDiv.appendChild(interimSpan);
+                        currentInterimText = text;
+                    }
+                }
+                resultDiv.scrollTop = resultDiv.scrollHeight;
+            }
+
+            // ==================== WebSocket URL 构建 ====================
+            function buildWsUrl() {
+                const host = 'iat-api.xfyun.cn';
+                const date = new Date().toUTCString();
+                const requestLine = 'GET /v2/iat HTTP/1.1';
+                const signatureOrigin = `host: ${host}\ndate: ${date}\n${requestLine}`;
+                const signature = CryptoJS.HmacSHA256(signatureOrigin, APISecret).toString(CryptoJS.enc.Base64);
+                const authorizationOrigin =
+                    `api_key="${APIKey}", algorithm="hmac-sha256", headers="host date request-line", signature="${signature}"`;
+                const authorization = btoa(authorizationOrigin);
+                const url =
+                    `wss://${host}/v2/iat?authorization=${encodeURIComponent(authorization)}&date=${encodeURIComponent(date)}&host=${host}`;
+                addLog(`🔐 鉴权URL已生成 (host=${host})`, 'info');
+                return url;
+            }
+
+            // ==================== ArrayBuffer → Base64 ====================
+            function arrayBufferToBase64(buffer) {
+                const bytes = new Uint8Array(buffer);
+                const len = bytes.byteLength;
+                // 分块处理以避免大字符串拼接的性能问题
+                const CHUNK_SIZE = 0x8000; // 32768
+                let result = '';
+                for (let i = 0; i < len; i += CHUNK_SIZE) {
+                    const chunk = bytes.subarray(i, Math.min(i + CHUNK_SIZE, len));
+                    let binary = '';
+                    for (let j = 0; j < chunk.length; j++) {
+                        binary += String.fromCharCode(chunk[j]);
+                    }
+                    result += btoa(binary);
+                }
+                return result;
+            }
+
+            // ==================== 重采样器 ====================
+            // 将任意采样率的 Float32 样本重采样到 targetRate
+            function resamplePush(inputSamples, inputRate, outputRate) {
+                if (inputRate === outputRate) {
+                    // 无需重采样，直接输出
+                    return new Float32Array(inputSamples);
+                }
+                const ratio = outputRate / inputRate;
+                // 将新样本追加到原始缓冲区
+                for (let i = 0; i < inputSamples.length; i++) {
+                    rawSampleBuffer.push(inputSamples[i]);
+                }
+                // 计算可输出的样本数
+                // 对于线性插值，输出样本i需要的最大输入索引为 ceil(i / ratio)
+                // 保守计算：输出N个样本需要至少 N/ratio 个输入样本
+                const maxOutputSamples = Math.floor((rawSampleBuffer.length - 1) * ratio);
+                if (maxOutputSamples <= 0) {
+                    return new Float32Array(0);
+                }
+                const output = new Float32Array(maxOutputSamples);
+                for (let i = 0; i < maxOutputSamples; i++) {
+                    const srcPos = i / ratio;
+                    const srcFloor = Math.floor(srcPos);
+                    const srcCeil = Math.min(srcFloor + 1, rawSampleBuffer.length - 1);
+                    const frac = srcPos - srcFloor;
+                    output[i] = rawSampleBuffer[srcFloor] * (1 - frac) + rawSampleBuffer[srcCeil] * frac;
+                }
+                // 保留未使用的样本（保留一些重叠用于下一次插值）
+                const usedInputSamples = Math.floor(maxOutputSamples / ratio);
+                // 至少保留1个样本用于下次插值的srcCeil
+                const keepFrom = Math.max(0, usedInputSamples - 1);
+                rawSampleBuffer = rawSampleBuffer.slice(keepFrom);
+                return output;
+            }
+
+            function resetResampler() {
+                rawSampleBuffer = [];
+                resampledBuffer = [];
+            }
+
+            // ==================== 发送音频帧 ====================
+            function sendAudioFrame(audioBase64, status) {
+                if (!ws || ws.readyState !== WebSocket.OPEN) {
+                    addLog(`⚠️ 无法发送帧，WS状态: ${ws ? ws.readyState : 'null'}`, 'warn');
+                    return false;
+                }
+                const frame = {
+                    common: { app_id: APPID },
+                    business: {
+                        language: 'zh_cn',
+                        domain: 'iat',
+                        accent: 'mandarin',
+                        dwa: 'wpgs',
+                        vad_eos: 2000,
+                        ptt: 0
+                    },
+                    data: {
+                        status: status,
+                        format: 'audio/L16;rate=16000',
+                        encoding: 'raw',
+                        audio: audioBase64
+                    }
+                };
+                try {
+                    const jsonStr = JSON.stringify(frame);
+                    ws.send(jsonStr);
+                    frameCounter++;
+                    if (audioBase64) {
+                        // Base64 字符串长度约等于原始字节的 4/3
+                        const estimatedBytes = Math.round(audioBase64.length * 0.75);
+                        totalBytesSent += estimatedBytes;
+                    }
+                    updateStats();
+                    if (status === 0) {
+                        addLog(`📤 [帧#${frameCounter}] 发送开始帧 (status=0, audio=${audioBase64 ? '有数据' : '空'})`,
+                            'info');
+                    } else if (status === 2) {
+                        addLog(`📤 [帧#${frameCounter}] 发送结束帧 (status=2)`, 'info');
+                    } else if (frameCounter % 25 === 0) {
+                        addLog(
+                            `📤 [帧#${frameCounter}] 音频帧 (status=1, audioBase64长度=${audioBase64.length}, 累计字节≈${totalBytesSent.toLocaleString()})`,
+                            'audio');
+                    }
+                    return true;
+                } catch (e) {
+                    addLog(`❌ 发送帧失败: ${e.message}`, 'error');
+                    return false;
+                }
+            }
+
+            // ==================== 从重采样缓冲区取数据发送 ====================
+            function flushResampledBuffer() {
+                if (!isRecording || !ws || ws.readyState !== WebSocket.OPEN) return;
+                const chunkSize = 640; // 640个样本 @16000Hz = 40ms = 1280字节
+                if (resampledBuffer.length < chunkSize) return;
+
+                // 取出 chunkSize 个 Float32 样本
+                const floatChunk = resampledBuffer.splice(0, chunkSize);
+
+                // 转换为 Int16 PCM
+                const pcmInt16 = new Int16Array(floatChunk.length);
+                for (let i = 0; i < floatChunk.length; i++) {
+                    const s = Math.max(-1, Math.min(1, floatChunk[i]));
+                    // 使用标准转换：负数乘0x8000，正数乘0x7FFF
+                    pcmInt16[i] = s < 0 ? Math.round(s * 0x8000) : Math.round(s * 0x7FFF);
+                }
+
+                // 获取底层 ArrayBuffer 并编码为 Base64
+                const base64 = arrayBufferToBase64(pcmInt16.buffer);
+
+                // 调试日志（每25帧输出一次）
+                if (frameCounter % 25 === 0 && frameCounter > 0) {
+                    addLog(
+                        `🔊 PCM: ${floatChunk.length}样本→${pcmInt16.byteLength}字节→Base64:${base64.length}字符, 前4样本=[${pcmInt16[0]},${pcmInt16[1]},${pcmInt16[2]},${pcmInt16[3]}]`,
+                        'audio');
+                }
+
+                sendAudioFrame(base64, 1);
+            }
+
+            // ==================== 开始识别 ====================
+            async function startRecognition() {
+                if (isRecording) return;
+                isRecording = true;
+                isClosing = false;
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                resultDiv.innerHTML = '';
+                currentInterimText = '';
+                finalResultCount = 0;
+                logArea.innerHTML = '';
+                frameCounter = 0;
+                totalBytesSent = 0;
+                resetResampler();
+                updateStats();
+
+                addLog('🚀 ===== 开始启动识别流程 =====', 'info');
+                setStatus('正在请求麦克风...', '');
+
+                try {
+                    // 1. 获取麦克风
+                    const constraints = {
+                        audio: {
+                            channelCount: 1,
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false,
+                            // sampleRate 只是建议值，浏览器可能忽略
+                            sampleRate: { ideal: 16000 }
+                        }
+                    };
+                    mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+                    const audioTrack = mediaStream.getAudioTracks()[0];
+                    const trackSettings = audioTrack.getSettings();
+                    addLog(`✅ 麦克风就绪: ${audioTrack.label}, 实际采样率=${trackSettings.sampleRate || '未知'}Hz`,
+                        'success');
+
+                    // 2. 创建 AudioContext
+                    audioContext = new(window.AudioContext || window.webkitAudioContext)();
+                    originalSampleRate = audioContext.sampleRate;
+                    resampleRatio = targetSampleRate / originalSampleRate;
+                    addLog(
+                        `🎛️ AudioContext 采样率: ${originalSampleRate} Hz → 目标: ${targetSampleRate} Hz, 重采样比率: ${resampleRatio.toFixed(4)}`,
+                        'info');
+                    if (originalSampleRate !== targetSampleRate) {
+                        addLog(
+                            `⚠️ 采样率不匹配！将进行真正的重采样: ${originalSampleRate}Hz → ${targetSampleRate}Hz`,
+                            'warn');
+                    } else {
+                        addLog(`✅ 采样率匹配，无需重采样`, 'success');
+                    }
+                    updateStats();
+
+                    const source = audioContext.createMediaStreamSource(mediaStream);
+                    const bufferSize = 4096;
+                    scriptProcessor = audioContext.createScriptProcessor(bufferSize, 1, 1);
+                    source.connect(scriptProcessor);
+                    scriptProcessor.connect(audioContext.destination);
+
+                    // 3. 建立 WebSocket
+                    const wsUrl = buildWsUrl();
+                    ws = new WebSocket(wsUrl);
+                    addLog(`🔗 正在连接 WebSocket...`, 'info');
+
+                    ws.onopen = () => {
+                        addLog(`✅ WebSocket 连接成功！`, 'success');
+                        setStatus('识别中...', 'recording');
+                        resetResampler();
+
+                        // 设置音频处理回调
+                        scriptProcessor.onaudioprocess = (event) => {
+                            if (!isRecording) return;
+                            const inputData = event.inputBuffer.getChannelData(0);
+                            // 重采样到 16000Hz
+                            const resampled = resamplePush(inputData, originalSampleRate, targetSampleRate);
+                            // 追加到发送缓冲区
+                            for (let i = 0; i < resampled.length; i++) {
+                                resampledBuffer.push(resampled[i]);
+                            }
+                            // 每25次回调输出一次日志
+                            if (frameCounter > 0 && frameCounter % 50 === 0) {
+                                addLog(
+                                    `🎵 音频回调: 输入${inputData.length}样本@${originalSampleRate}Hz → 输出${resampled.length}样本@${targetSampleRate}Hz, 缓冲区积压: ${resampledBuffer.length}样本`,
+                                    'audio');
+                            }
+                        };
+
+                        // 发送第一帧（status=0），可以携带空音频
+                        // 讯飞协议允许首帧不带音频数据，作为握手信号
+                        sendAudioFrame('', 0);
+
+                        // 启动定时发送（每40ms检查一次缓冲区）
+                        if (sendInterval) clearInterval(sendInterval);
+                        sendInterval = setInterval(() => {
+                            flushResampledBuffer();
+                        }, 40);
+
+                        addLog(`⏱️ 发送定时器已启动 (间隔40ms, 每次${640}样本@${targetSampleRate}Hz)`, 'info');
+                        addLog(`🎤 请开始对着麦克风说普通话...`, 'info');
+                    };
+
+                    ws.onmessage = (event) => {
+                        try {
+                            const resp = JSON.parse(event.data);
+                            const code = resp.code;
+                            const sid = resp.sid || '';
+
+                            if (code === 0) {
+                                // 成功响应
+                                if (resp.data && resp.data.result) {
+                                    const resultData = resp.data.result;
+                                    const pgs = resultData.pgs; // 'apd' 或 'rpl'
+                                    const wsArray = resultData.ws;
+                                    const sn = resultData.sn;
+                                    const ls = resultData.ls;
+
+                                    // 提取文本
+                                    let text = '';
+                                    if (wsArray && Array.isArray(wsArray)) {
+                                        wsArray.forEach((wsItem) => {
+                                            if (wsItem.cw && Array.isArray(wsItem.cw)) {
+                                                wsItem.cw.forEach((cw) => {
+                                                    if (cw.w) {
+                                                        text += cw.w;
+                                                    }
+                                                });
+                                            }
+                                        });
+                                    }
+
+                                    if (pgs === 'apd') {
+                                        // 中间追加结果
+                                        addLog(`📝 [中间结果 sn=${sn}] pgs=apd: "${text}"`, 'info');
+                                        appendResult(text, false);
+                                    } else if (pgs === 'rpl') {
+                                        // 最终替换结果（一句话结束）
+                                        addLog(`✅ [最终结果 sn=${sn}] pgs=rpl, ls=${ls}: "${text}"`, 'success');
+                                        appendResult(text + (ls ? '。\n' : ''), true);
+                                    } else {
+                                        // 其他状态
+                                        addLog(`📨 [sn=${sn}] pgs=${pgs}: "${text}"`, 'info');
+                                        if (text) appendResult(text, false);
+                                    }
+                                } else {
+                                    // code=0 但没有result（可能是心跳或其他）
+                                    addLog(`📨 收到消息 code=0, sid=${sid}, 无result数据`, 'info');
+                                }
+                            } else {
+                                // 错误响应
+                                const errMsg = resp.message || resp.desc || '未知错误';
+                                addLog(`❌ 服务器错误: code=${code}, sid=${sid}, message="${errMsg}"`, 'error');
+                                appendResult(`\n[错误 ${code}: ${errMsg}]\n`, true);
+                            }
+                        } catch (e) {
+                            addLog(`❌ 解析服务器消息失败: ${e.message}, 原始数据: ${event.data.substring(0, 200)}`,
+                                'error');
+                        }
+                    };
+
+                    ws.onerror = (error) => {
+                        addLog(`❌ WebSocket 错误事件触发: type=${error.type}`, 'error');
+                        setStatus('连接错误', '');
+                    };
+
+                    ws.onclose = (event) => {
+                        addLog(`🔌 WebSocket 关闭: code=${event.code}, reason="${event.reason || '无'}", clean=${event.wasClean}`,
+                            'info');
+                        setStatus(`连接已关闭 (${event.code})`, '');
+                        if (!isClosing && isRecording) {
+                            addLog(`⚠️ WebSocket 意外关闭，自动停止识别`, 'warn');
+                            stopRecognition();
+                        }
+                    };
+
+                } catch (err) {
+                    addLog(`❌ 启动失败: ${err.name} - ${err.message}`, 'error');
+                    if (err.name === 'NotAllowedError') {
+                        addLog(`💡 请确保已授予麦克风权限`, 'warn');
+                    }
+                    setStatus('启动失败', '');
+                    stopRecognition();
+                }
+            }
+
+            // ==================== 停止识别 ====================
+            function stopRecognition() {
+                if (isClosing) return;
+                isClosing = true;
+                if (!isRecording) {
+                    isClosing = false;
+                    return;
+                }
+                isRecording = false;
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                setStatus('正在停止...', '');
+                addLog('⏹️ ===== 开始停止识别 =====', 'info');
+                addLog(`📊 统计: 共发送${frameCounter}帧, 约${totalBytesSent.toLocaleString()}字节音频数据`, 'info');
+
+                // 停止定时发送
+                if (sendInterval) {
+                    clearInterval(sendInterval);
+                    sendInterval = null;
+                    addLog(`⏱️ 发送定时器已停止`, 'info');
+                }
+
+                // 发送缓冲区中剩余的数据
+                if (resampledBuffer.length > 0 && ws && ws.readyState === WebSocket.OPEN) {
+                    addLog(`📤 发送剩余数据: ${resampledBuffer.length}个样本`, 'audio');
+                    // 将剩余样本补齐到640的倍数或直接发送
+                    while (resampledBuffer.length >= 640 && ws && ws.readyState === WebSocket.OPEN) {
+                        flushResampledBuffer();
+                    }
+                    // 发送不足640的剩余样本（补齐或直接发送）
+                    if (resampledBuffer.length > 0 && ws && ws.readyState === WebSocket.OPEN) {
+                        const remaining = resampledBuffer.splice(0, resampledBuffer.length);
+                        const pcmInt16 = new Int16Array(remaining.length);
+                        for (let i = 0; i < remaining.length; i++) {
+                            const s = Math.max(-1, Math.min(1, remaining[i]));
+                            pcmInt16[i] = s < 0 ? Math.round(s * 0x8000) : Math.round(s * 0x7FFF);
+                        }
+                        const base64 = arrayBufferToBase64(pcmInt16.buffer);
+                        sendAudioFrame(base64, 1);
+                        addLog(`📤 发送尾部数据: ${remaining.length}个样本`, 'audio');
+                    }
+                }
+
+                // 断开音频处理
+                if (scriptProcessor) {
+                    scriptProcessor.disconnect();
+                    scriptProcessor.onaudioprocess = null;
+                    scriptProcessor = null;
+                    addLog(`🔇 ScriptProcessor 已断开`, 'info');
+                }
+                if (audioContext && audioContext.state !== 'closed') {
+                    audioContext.close().then(() => {
+                        addLog(`🔇 AudioContext 已关闭`, 'info');
+                    }).catch(() => {});
+                    audioContext = null;
+                }
+                if (mediaStream) {
+                    mediaStream.getTracks().forEach(track => {
+                        track.stop();
+                        addLog(`🔇 音轨已停止: ${track.label}`, 'info');
+                    });
+                    mediaStream = null;
+                }
+
+                // 发送结束帧
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    sendAudioFrame('', 2);
+                    addLog(`📤 结束帧已发送，等待服务器最终响应...`, 'info');
+                    // 给服务器一些时间处理最终结果，然后关闭
+                    const closeWs = ws;
+                    setTimeout(() => {
+                        if (closeWs && closeWs.readyState === WebSocket.OPEN) {
+                            closeWs.close(1000, '客户端主动关闭');
+                            addLog(`🔌 WebSocket 已主动关闭`, 'info');
+                        }
+                    }, 800);
+                } else if (ws) {
+                    ws.close(1000, '客户端主动关闭');
+                    ws = null;
+                }
+
+                appendResult('\n⏹️ 已停止识别\n', true);
+                setStatus('已停止', '');
+                updateStats();
+                isClosing = false;
+                addLog('✅ ===== 停止完成 =====', 'success');
+            }
+
+            // ==================== 事件绑定 ====================
+            startBtn.addEventListener('click', startRecognition);
+            stopBtn.addEventListener('click', stopRecognition);
+
+            window.addEventListener('beforeunload', () => {
+                if (isRecording) {
+                    addLog('⚠️ 页面即将关闭，强制停止识别', 'warn');
+                    // 同步清理（beforeunload中异步可能不执行）
+                    isRecording = false;
+                    if (sendInterval) clearInterval(sendInterval);
+                    if (scriptProcessor) scriptProcessor.disconnect();
+                    if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        try { sendAudioFrame('', 2); } catch (e) {}
+                        ws.close(1000);
+                    }
+                }
+            });
+
+            // ==================== 初始化 ====================
+            addLog('💡 页面已加载完毕，点击 "开始识别" 启动', 'info');
+            addLog('📋 修复要点: 重采样+chunk.buffer修复+结果解析修复+完整日志', 'info');
+            updateStats();
+        })();
+    </script>
+</body>
+</html>
